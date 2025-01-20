@@ -65,7 +65,9 @@ impl InstructionChunk {
     pub fn new(bytes: Vec<u8>) -> InstructionChunk {
         let chunk: Vec<u8> = Vec::new();
 
-        // TODO: finish this
+        // TODO: for performance reasons we will chunk up instructions up until a terminator (syscall or
+        // jmp), then execute the chunk as a whole, this prevents checking the next instruction
+        // for every instruction
 
         InstructionChunk {
             terminator: Instruction::new(Kind::Syscall, 2),
