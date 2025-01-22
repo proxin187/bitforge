@@ -1,0 +1,229 @@
+use std::path::{Path, PathBuf};
+use std::io::{BufReader, BufRead, Lines};
+use std::fs::File;
+use std::env;
+
+
+#[derive(Debug)]
+pub enum OperandKind {
+    Register,
+    ModRM,
+    Vex,
+    Immediate,
+    Is4Imz2,
+    Implicit,
+    Index,
+}
+
+impl From<char> for OperandKind {
+    fn from(value: char) -> OperandKind {
+        match value {
+            'r' => OperandKind::Register,
+            'm' => OperandKind::ModRM,
+            'v' => OperandKind::Vex,
+            'i' => OperandKind::Immediate,
+            's' => OperandKind::Is4Imz2,
+            '-' => OperandKind::Implicit,
+            'x' => OperandKind::Index,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Operands {
+    operands: Vec<OperandKind>,
+}
+
+impl From<&str> for Operands {
+    fn from(value: &str) -> Operands {
+        Operands {
+            operands: value.trim_matches(['[', ':'])
+                .chars()
+                .map(|c| OperandKind::from(c))
+                .collect::<Vec<OperandKind>>(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum PlainCode {
+    O16,
+    O32,
+    O64,
+    Hlexr,
+}
+
+impl From<&str> for PlainCode {
+    fn from(value: &str) -> PlainCode {
+        println!("cargo:warning=value: {:?}", value);
+
+        match value {
+            "o16" => PlainCode::O16,
+            "o32" => PlainCode::O32,
+            "o64" => PlainCode::O64,
+            "hlexr" => PlainCode::Hlexr,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ImmCode {
+    Imm8,
+    Imm8Unsigned,
+    Imm8Extended,
+    Imm16,
+    Imm32,
+    Imm32Extended,
+    Imm64,
+    Rel,
+    Rel8,
+    Rel16,
+    Rel32,
+    Opsize,
+    Addrsize,
+    Seg,
+}
+
+impl From<&str> for ImmCode {
+    fn from(value: &str) -> ImmCode {
+        match value {
+            "ib" => ImmCode::Imm8,
+            "ib,u" => ImmCode::Imm8Unsigned,
+            "ib,s" => ImmCode::Imm8Extended,
+            "iw" => ImmCode::Imm16,
+            "id" => ImmCode::Imm32,
+            "id,s" => ImmCode::Imm32Extended,
+            "iq" => ImmCode::Imm64,
+            "rel" => ImmCode::Rel,
+            "rel8" => ImmCode::Rel8,
+            "rel16" => ImmCode::Rel16,
+            "rel32" => ImmCode::Rel32,
+            "iwd" => ImmCode::Opsize,
+            "iwdq" => ImmCode::Addrsize,
+            "seg" => ImmCode::Seg,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Opcode {
+    Basic {
+        value: u8,
+    },
+    Reg {
+        value: u8,
+    },
+    PlainCode {
+        code: PlainCode,
+    },
+    Rm,
+}
+
+impl TryFrom<&str> for Opcode {
+    type Error = Box<dyn std::error::Error>;
+
+    fn try_from(value: &str) -> Result<Opcode, Box<dyn std::error::Error>> {
+        match value {
+            "/r" => Ok(Opcode::Rm),
+            _ => {
+                if let Ok(value) = u8::from_str_radix(value, 16) {
+                    Ok(Opcode::Basic {
+                        value,
+                    })
+                } else if value.starts_with("/") {
+                    let last = value.chars()
+                        .last()
+                        .ok_or::<Box<dyn std::error::Error>>("failed to get last character".into())?
+                        .to_string();
+
+                    Ok(Opcode::Reg {
+                        value: u8::from_str_radix(last.as_str(), 10)?,
+                    })
+                } else {
+                    Ok(Opcode::PlainCode {
+                        code: PlainCode::from(value),
+                    })
+                }
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Instruction {
+    mnemonic: String,
+    operands: Operands,
+    opcodes: Vec<Opcode>,
+}
+
+impl Instruction {
+    pub fn parse(line: &str) -> Option<Instruction> {
+        let mut parts = line.split('\t').filter(|token| !token.is_empty());
+
+        let mnemonic = parts.next().map(|mnemonic| mnemonic.to_string())?;
+
+        parts.next();
+
+        let operands = parts.next().map(|operands| Operands::from(operands))?;
+
+        let opcodes = parts.next()
+            .map(|part| {
+                part.trim_matches(']')
+                    .split(' ')
+                    .filter_map(|opcode| Opcode::try_from(opcode).ok())
+                    .collect::<Vec<Opcode>>()
+            })?;
+
+        Some(Instruction {
+            mnemonic,
+            operands,
+            opcodes,
+        })
+    }
+}
+
+pub struct Schematic {
+    lines: Lines<BufReader<File>>,
+    out: File,
+}
+
+impl Schematic {
+    pub fn new(path: PathBuf) -> Result<Schematic, Box<dyn std::error::Error>> {
+        let reader = BufReader::new(File::open("schematics/simple.dat")?);
+
+        Ok(Schematic {
+            lines: reader.lines(),
+            out: File::create(path)?,
+        })
+    }
+
+    fn run(&mut self) {
+        while let Some(line) = self.lines.next() {
+            match line {
+                Ok(line) => {
+                    let instruction = Instruction::parse(&line);
+
+                    println!("cargo:warning=instruction: {:?}", instruction);
+                },
+                Err(err) => {
+                },
+            }
+        }
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let dir = env::var_os("OUT_DIR").ok_or::<Box<dyn std::error::Error>>("failed to get OUT_DIR".into())?;
+    let mut schematic = Schematic::new(Path::new(&dir).join("instructions.rs"))?;
+
+    schematic.run();
+
+    println!("cargo::rerun-if-changed=build.rs");
+
+    Ok(())
+}
+
+

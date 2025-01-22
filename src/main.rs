@@ -1,3 +1,4 @@
+mod schematics;
 mod config;
 mod exec;
 
@@ -5,6 +6,8 @@ use exec::Executor;
 
 use clap::{Parser, Subcommand};
 use env_logger::{Builder, Env};
+
+include!(concat!(env!("OUT_DIR"), "/instructions.rs"));
 
 
 #[derive(Subcommand)]

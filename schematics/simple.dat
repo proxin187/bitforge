@@ -1,0 +1,5 @@
+
+
+MOV		rm64,imm32			[mi:	hlexr o64 c7 /0 id,s]			X64
+
+
