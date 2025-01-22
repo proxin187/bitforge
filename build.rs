@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
-use std::io::{BufReader, BufRead, Lines};
+use std::io::{BufReader, BufRead, Lines, Write};
+use std::path::Path;
 use std::fs::File;
 use std::env;
 
@@ -13,6 +13,20 @@ pub enum OperandKind {
     Is4Imz2,
     Implicit,
     Index,
+}
+
+impl OperandKind {
+    pub fn size(&self) -> Option<&'static str> {
+        match self {
+            OperandKind::Register
+                | OperandKind::ModRM
+                | OperandKind::Vex => Some("u8"),
+            OperandKind::Immediate
+                | OperandKind::Is4Imz2
+                | OperandKind::Index => Some("u64"),
+            OperandKind::Implicit => None,
+        }
+    }
 }
 
 impl From<char> for OperandKind {
@@ -35,6 +49,16 @@ pub struct Operands {
     operands: Vec<OperandKind>,
 }
 
+impl std::fmt::Display for Operands {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        for operand in self.operands.iter() {
+            f.write_fmt(format_args!("{:?}", operand))?;
+        }
+
+        Ok(())
+    }
+}
+
 impl From<&str> for Operands {
     fn from(value: &str) -> Operands {
         Operands {
@@ -54,10 +78,17 @@ pub enum PlainCode {
     Hlexr,
 }
 
+impl PlainCode {
+    pub fn prefix(&self) -> String {
+        match self {
+            PlainCode::O64 => String::from("0x48"),
+            _ => String::new(),
+        }
+    }
+}
+
 impl From<&str> for PlainCode {
     fn from(value: &str) -> PlainCode {
-        println!("cargo:warning=value: {:?}", value);
-
         match value {
             "o16" => PlainCode::O16,
             "o32" => PlainCode::O32,
@@ -86,24 +117,27 @@ pub enum ImmCode {
     Seg,
 }
 
-impl From<&str> for ImmCode {
-    fn from(value: &str) -> ImmCode {
+impl ImmCode {
+    pub fn length() {
+    }
+
+    pub fn from(value: &str) -> Option<ImmCode> {
         match value {
-            "ib" => ImmCode::Imm8,
-            "ib,u" => ImmCode::Imm8Unsigned,
-            "ib,s" => ImmCode::Imm8Extended,
-            "iw" => ImmCode::Imm16,
-            "id" => ImmCode::Imm32,
-            "id,s" => ImmCode::Imm32Extended,
-            "iq" => ImmCode::Imm64,
-            "rel" => ImmCode::Rel,
-            "rel8" => ImmCode::Rel8,
-            "rel16" => ImmCode::Rel16,
-            "rel32" => ImmCode::Rel32,
-            "iwd" => ImmCode::Opsize,
-            "iwdq" => ImmCode::Addrsize,
-            "seg" => ImmCode::Seg,
-            _ => unreachable!(),
+            "ib" => Some(ImmCode::Imm8),
+            "ib,u" => Some(ImmCode::Imm8Unsigned),
+            "ib,s" => Some(ImmCode::Imm8Extended),
+            "iw" => Some(ImmCode::Imm16),
+            "id" => Some(ImmCode::Imm32),
+            "id,s" => Some(ImmCode::Imm32Extended),
+            "iq" => Some(ImmCode::Imm64),
+            "rel" => Some(ImmCode::Rel),
+            "rel8" => Some(ImmCode::Rel8),
+            "rel16" => Some(ImmCode::Rel16),
+            "rel32" => Some(ImmCode::Rel32),
+            "iwd" => Some(ImmCode::Opsize),
+            "iwdq" => Some(ImmCode::Addrsize),
+            "seg" => Some(ImmCode::Seg),
+            _ => None,
         }
     }
 }
@@ -119,7 +153,22 @@ pub enum Opcode {
     PlainCode {
         code: PlainCode,
     },
+    ImmCode {
+        code: ImmCode,
+    },
     Rm,
+}
+
+impl Opcode {
+    pub fn pattern(&self) -> String {
+        match self {
+            Opcode::Basic { value } => format!("{:#x?},", value),
+            // TODO: maybe use or operator here?
+            Opcode::Reg { value } => format!("reg,"),
+            Opcode::PlainCode { code } => code.prefix(),
+            Opcode::ImmCode { code } => 
+        }
+    }
 }
 
 impl TryFrom<&str> for Opcode {
@@ -141,6 +190,10 @@ impl TryFrom<&str> for Opcode {
 
                     Ok(Opcode::Reg {
                         value: u8::from_str_radix(last.as_str(), 10)?,
+                    })
+                } else if let Some(code) = ImmCode::from(value) {
+                    Ok(Opcode::ImmCode {
+                        code,
                     })
                 } else {
                     Ok(Opcode::PlainCode {
@@ -187,39 +240,89 @@ impl Instruction {
 
 pub struct Schematic {
     lines: Lines<BufReader<File>>,
+    kind: File,
     out: File,
 }
 
 impl Schematic {
-    pub fn new(path: PathBuf) -> Result<Schematic, Box<dyn std::error::Error>> {
+    pub fn new(path: &Path) -> Result<Schematic, Box<dyn std::error::Error>> {
         let reader = BufReader::new(File::open("schematics/simple.dat")?);
 
         Ok(Schematic {
             lines: reader.lines(),
-            out: File::create(path)?,
+            kind: File::create(path.join("kind.rs"))?,
+            out: File::create(path.join("instructions.rs"))?,
         })
     }
 
-    fn run(&mut self) {
+    fn add_inst(&mut self, instruction: Instruction) -> Result<(), Box<dyn std::error::Error>> {
+        self.kind.write_all(format!("{}{} {{", instruction.mnemonic, instruction.operands).as_bytes())?;
+
+        for operand in instruction.operands.operands.iter() {
+            if let Some(size) = operand.size() {
+                self.kind.write_all(format!("{:?}: {},", operand, size).as_bytes())?;
+            }
+        }
+
+        self.kind.write_all(b"}")?;
+
+        self.out.write_all(b"[")?;
+
+        for opcode in instruction.opcodes.iter() {
+        }
+
+        Ok(())
+    }
+
+    fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.kind.write_all(b"
+            pub enum Kind {
+        ")?;
+
+        self.out.write_all(b"
+            pub mod kind;
+
+            use kind::Kind;
+
+            pub struct Instruction {
+                kind: Kind,
+                size: u8,
+            }
+
+            pub fn parse(bytes: [u8; 16]) -> Instruction {
+                match bytes {
+        ")?;
+
         while let Some(line) = self.lines.next() {
             match line {
                 Ok(line) => {
-                    let instruction = Instruction::parse(&line);
-
-                    println!("cargo:warning=instruction: {:?}", instruction);
+                    if let Some(instruction) = Instruction::parse(&line) {
+                        self.add_inst(instruction)?;
+                    }
                 },
                 Err(err) => {
+                    println!("cargo:warning=err: {:?}", err);
                 },
             }
         }
+
+        self.out.write_all(b"
+                _ => unreachable!(),
+            }}
+        ")?;
+
+        self.kind.write_all(b"}").map_err(|err| err.into())
     }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = env::var_os("OUT_DIR").ok_or::<Box<dyn std::error::Error>>("failed to get OUT_DIR".into())?;
-    let mut schematic = Schematic::new(Path::new(&dir).join("instructions.rs"))?;
+    let mut schematic = Schematic::new(Path::new(&dir))?;
 
-    schematic.run();
+    schematic.run()?;
+
+    println!("cargo:warning={:?}", std::fs::read_to_string(Path::new(&dir).join("kind.rs"))?);
+    println!("cargo:warning={:?}", std::fs::read_to_string(Path::new(&dir).join("instructions.rs"))?);
 
     println!("cargo::rerun-if-changed=build.rs");
 
