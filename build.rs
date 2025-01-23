@@ -81,7 +81,7 @@ pub enum PlainCode {
 impl PlainCode {
     pub fn prefix(&self) -> String {
         match self {
-            PlainCode::O64 => String::from("0x48"),
+            PlainCode::O64 => String::from("0x48,"),
             _ => String::new(),
         }
     }
@@ -118,7 +118,28 @@ pub enum ImmCode {
 }
 
 impl ImmCode {
-    pub fn length() {
+    // TODO: not sure if these sizes are correct, check later, also some sizes are implicit
+    //
+    // TODO: maybe we can get this to return the arg how its supposed to be passed to the
+    // constructor too?
+
+    pub fn generate(&self) -> &'static str {
+        match self {
+            ImmCode::Imm8
+                | ImmCode::Imm8Unsigned
+                | ImmCode::Imm8Extended
+                | ImmCode::Rel8 => "imm8",
+            ImmCode::Imm16
+                | ImmCode::Rel16 => "imm8,imm16",
+            ImmCode::Imm32
+                | ImmCode::Imm32Extended
+                | ImmCode::Rel32 => "imm8,imm16,imm24,imm32",
+            ImmCode::Imm64
+                | ImmCode::Rel
+                | ImmCode::Addrsize
+                | ImmCode::Opsize
+                | ImmCode::Seg => "imm8,imm16,imm24,imm32,imm40,imm48,imm56,imm64",
+        }
     }
 
     pub fn from(value: &str) -> Option<ImmCode> {
@@ -166,7 +187,8 @@ impl Opcode {
             // TODO: maybe use or operator here?
             Opcode::Reg { value } => format!("reg,"),
             Opcode::PlainCode { code } => code.prefix(),
-            Opcode::ImmCode { code } => 
+            Opcode::ImmCode { code } => code.generate().to_string(),
+            Opcode::Rm => format!("rm,"),
         }
     }
 }
@@ -269,7 +291,10 @@ impl Schematic {
         self.out.write_all(b"[")?;
 
         for opcode in instruction.opcodes.iter() {
+            self.out.write_all(opcode.pattern().as_bytes())?;
         }
+
+        self.out.write_all(b",..]")?;
 
         Ok(())
     }
