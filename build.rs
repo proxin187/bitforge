@@ -79,9 +79,16 @@ pub enum PlainCode {
 }
 
 impl PlainCode {
+    pub fn size(&self) -> usize {
+        match self {
+            PlainCode::O64 => 1,
+            _ => 0,
+        }
+    }
+
     pub fn prefix(&self) -> String {
         match self {
-            PlainCode::O64 => String::from("0x48,"),
+            PlainCode::O64 => String::from("0x48"),
             _ => String::new(),
         }
     }
@@ -123,22 +130,34 @@ impl ImmCode {
     // TODO: maybe we can get this to return the arg how its supposed to be passed to the
     // constructor too?
 
-    pub fn generate(&self) -> &'static str {
+    pub fn pattern(&self) -> String {
+        (0..self.size())
+            .map(|byte| format!("imm{},", byte * 8))
+            .collect::<String>()
+            .trim_end_matches(',')
+            .to_string()
+    }
+
+    pub fn value(&self) -> String {
+        format!("u{}::from_ne_bytes([{}])", self.size() * 8, self.pattern())
+    }
+
+    pub fn size(&self) -> usize {
         match self {
             ImmCode::Imm8
                 | ImmCode::Imm8Unsigned
                 | ImmCode::Imm8Extended
-                | ImmCode::Rel8 => "imm8",
+                | ImmCode::Rel8 => 1,
             ImmCode::Imm16
-                | ImmCode::Rel16 => "imm8,imm16",
+                | ImmCode::Rel16 => 2,
             ImmCode::Imm32
                 | ImmCode::Imm32Extended
-                | ImmCode::Rel32 => "imm8,imm16,imm24,imm32",
+                | ImmCode::Rel32 => 4,
             ImmCode::Imm64
                 | ImmCode::Rel
                 | ImmCode::Addrsize
                 | ImmCode::Opsize
-                | ImmCode::Seg => "imm8,imm16,imm24,imm32,imm40,imm48,imm56,imm64",
+                | ImmCode::Seg => 8,
         }
     }
 
@@ -181,13 +200,21 @@ pub enum Opcode {
 }
 
 impl Opcode {
+    pub fn size(&self) -> usize {
+        match self {
+            Opcode::Rm | Opcode::Reg { .. } | Opcode::Basic { .. } => 1,
+            Opcode::PlainCode { code } => code.size(),
+            Opcode::ImmCode { code } => code.size(),
+        }
+    }
+
     pub fn pattern(&self) -> String {
         match self {
             Opcode::Basic { value } => format!("{:#x?},", value),
             // TODO: maybe use or operator here?
             Opcode::Reg { value } => format!("reg,"),
             Opcode::PlainCode { code } => code.prefix(),
-            Opcode::ImmCode { code } => code.generate().to_string(),
+            Opcode::ImmCode { code } => code.pattern(),
             Opcode::Rm => format!("rm,"),
         }
     }
@@ -258,6 +285,10 @@ impl Instruction {
             opcodes,
         })
     }
+
+    pub fn size(&self) -> usize {
+        self.opcodes.iter().map(|opcode| opcode.size()).sum()
+    }
 }
 
 pub struct Schematic {
@@ -294,7 +325,7 @@ impl Schematic {
             self.out.write_all(opcode.pattern().as_bytes())?;
         }
 
-        self.out.write_all(b",..]")?;
+        self.out.write_all(format!(",..] => Instruction {{ size: {}", instruction.size()).as_bytes())?;
 
         Ok(())
     }
@@ -310,8 +341,8 @@ impl Schematic {
             use kind::Kind;
 
             pub struct Instruction {
-                kind: Kind,
                 size: u8,
+                kind: Kind,
             }
 
             pub fn parse(bytes: [u8; 16]) -> Instruction {
