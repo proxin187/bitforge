@@ -1,8 +1,7 @@
-mod schematics;
 mod config;
-mod exec;
+mod emu;
 
-use exec::Executor;
+use emu::Executor;
 
 use clap::{Parser, Subcommand};
 use env_logger::{Builder, Env};

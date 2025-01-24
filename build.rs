@@ -16,14 +16,27 @@ pub enum OperandKind {
 }
 
 impl OperandKind {
-    pub fn size(&self) -> Option<&'static str> {
+    pub fn pattern(&self) -> &'static str {
+        match self {
+            OperandKind::Register => "rm",
+            OperandKind::ModRM => "reg",
+            OperandKind::Vex => "vex",
+            OperandKind::Immediate => "immx",
+            OperandKind::Is4Imz2 => "is4imz2",
+            OperandKind::Implicit => "implicit",
+            OperandKind::Index => "index",
+        }
+    }
+
+    // TODO: we need to dynamically get the size of the immediate value
+    pub fn size(&self, imm_size: usize) -> Option<String> {
         match self {
             OperandKind::Register
                 | OperandKind::ModRM
-                | OperandKind::Vex => Some("u8"),
-            OperandKind::Immediate
-                | OperandKind::Is4Imz2
-                | OperandKind::Index => Some("u64"),
+                | OperandKind::Vex => Some(String::from("u8")),
+            OperandKind::Is4Imz2
+                | OperandKind::Index => Some(String::from("u64")),
+            OperandKind::Immediate => Some(format!("u{}", imm_size * 8)),
             OperandKind::Implicit => None,
         }
     }
@@ -88,7 +101,8 @@ impl PlainCode {
 
     pub fn prefix(&self) -> String {
         match self {
-            PlainCode::O64 => String::from("0x48"),
+            // TODO: this currently assumes REX.W
+            PlainCode::O64 => String::from("0x48,"),
             _ => String::new(),
         }
     }
@@ -126,20 +140,15 @@ pub enum ImmCode {
 
 impl ImmCode {
     // TODO: not sure if these sizes are correct, check later, also some sizes are implicit
-    //
-    // TODO: maybe we can get this to return the arg how its supposed to be passed to the
-    // constructor too?
-
-    pub fn pattern(&self) -> String {
-        (0..self.size())
-            .map(|byte| format!("imm{},", byte * 8))
+    pub fn pattern(&self, deref: bool) -> String {
+        (1..=self.size())
+            .map(|byte| format!("{}imm{},", deref.then(|| "*").unwrap_or_default(), byte * 8))
             .collect::<String>()
-            .trim_end_matches(',')
             .to_string()
     }
 
-    pub fn value(&self) -> String {
-        format!("u{}::from_ne_bytes([{}])", self.size() * 8, self.pattern())
+    pub fn value_ref(&self) -> String {
+        format!("immx: u{}::from_ne_bytes([{}]),", self.size() * 8, self.pattern(true))
     }
 
     pub fn size(&self) -> usize {
@@ -200,11 +209,27 @@ pub enum Opcode {
 }
 
 impl Opcode {
+    pub fn imm_size(&self) -> Option<usize> {
+        match self {
+            Opcode::ImmCode { code } => Some(code.size()),
+            _ => None,
+        }
+    }
+
     pub fn size(&self) -> usize {
         match self {
             Opcode::Rm | Opcode::Reg { .. } | Opcode::Basic { .. } => 1,
             Opcode::PlainCode { code } => code.size(),
             Opcode::ImmCode { code } => code.size(),
+        }
+    }
+
+    pub fn value_ref(&self) -> String {
+        match self {
+            Opcode::Basic { .. } | Opcode::PlainCode { .. } => String::new(),
+            Opcode::Reg { .. } => String::from("reg: *reg,"),
+            Opcode::ImmCode { code } => code.value_ref(),
+            Opcode::Rm => String::from("rm: *rm,"),
         }
     }
 
@@ -214,7 +239,7 @@ impl Opcode {
             // TODO: maybe use or operator here?
             Opcode::Reg { value } => format!("reg,"),
             Opcode::PlainCode { code } => code.prefix(),
-            Opcode::ImmCode { code } => code.pattern(),
+            Opcode::ImmCode { code } => code.pattern(false),
             Opcode::Rm => format!("rm,"),
         }
     }
@@ -289,6 +314,12 @@ impl Instruction {
     pub fn size(&self) -> usize {
         self.opcodes.iter().map(|opcode| opcode.size()).sum()
     }
+
+    pub fn imm_size(&self) -> Option<usize> {
+        self.opcodes.iter()
+            .filter_map(|opcode| opcode.imm_size())
+            .next()
+    }
 }
 
 pub struct Schematic {
@@ -309,15 +340,16 @@ impl Schematic {
     }
 
     fn add_inst(&mut self, instruction: Instruction) -> Result<(), Box<dyn std::error::Error>> {
+        // TODO: maybe mnemonic should also include sizes?
         self.kind.write_all(format!("{}{} {{", instruction.mnemonic, instruction.operands).as_bytes())?;
 
         for operand in instruction.operands.operands.iter() {
-            if let Some(size) = operand.size() {
-                self.kind.write_all(format!("{:?}: {},", operand, size).as_bytes())?;
+            if let Some(size) = instruction.imm_size().and_then(|imm_size| operand.size(imm_size)) {
+                self.kind.write_all(format!("{}: {},", operand.pattern(), size).as_bytes())?;
             }
         }
 
-        self.kind.write_all(b"}")?;
+        self.kind.write_all(b"},")?;
 
         self.out.write_all(b"[")?;
 
@@ -325,13 +357,20 @@ impl Schematic {
             self.out.write_all(opcode.pattern().as_bytes())?;
         }
 
-        self.out.write_all(format!(",..] => Instruction {{ size: {}", instruction.size()).as_bytes())?;
+        self.out.write_all(format!("..] => Instruction {{ size: {}, kind: Kind::{}{} {{", instruction.size(), instruction.mnemonic, instruction.operands).as_bytes())?;
+
+        for opcode in instruction.opcodes.iter() {
+            self.out.write_all(opcode.value_ref().as_bytes())?;
+        }
+
+        self.out.write_all(b"}},")?;
 
         Ok(())
     }
 
     fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.kind.write_all(b"
+            #[derive(Debug)]
             pub enum Kind {
         ")?;
 
@@ -340,12 +379,13 @@ impl Schematic {
 
             use kind::Kind;
 
+            #[derive(Debug)]
             pub struct Instruction {
                 size: u8,
                 kind: Kind,
             }
 
-            pub fn parse(bytes: [u8; 16]) -> Instruction {
+            pub fn parse(bytes: &[u8]) -> Instruction {
                 match bytes {
         ")?;
 

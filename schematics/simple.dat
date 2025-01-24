@@ -1,5 +1,6 @@
 
 
 MOV		rm64,imm32			[mi:	hlexr o64 c7 /0 id,s]			X64
+SYSCALL		void				[	0f 05]					P6,AMD
 
 
