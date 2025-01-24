@@ -3,7 +3,7 @@
 bitforge is a low level sandbox for unix-like systems.
 
 ## Key Features
-* Potential for near native performance through avoiding virtualization.
+* Partial emulation (syscalls, jumps and memory reads are emulated, everything else should run natively).
 * Intercepting syscalls on the instruction layer.
 
 ## Goals
