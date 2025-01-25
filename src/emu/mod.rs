@@ -23,17 +23,19 @@ impl Executor {
         let file = File::parse(&*data)?;
 
         Ok(Executor {
-            memory: Memory::new(&file),
+            memory: Memory::from(&file),
             entry: file.entry() as usize,
         })
     }
 
     pub fn exec(&mut self) {
+        /*
         if let Some((segment, size)) = self.memory.get_segment(self.entry).and_then(|segment| segment.len(self.entry).map(|size| (segment, size))) {
             let read = segment.read(self.entry..self.entry + size);
 
             // let chunk = InstructionChunk::new(read);
         }
+        */
 
         info!("executor: {:x?}", self);
     }

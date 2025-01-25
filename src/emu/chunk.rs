@@ -1,7 +1,5 @@
 use crate::{Instruction, Kind, parse};
 
-use super::memory::Read;
-
 use log::info;
 
 
