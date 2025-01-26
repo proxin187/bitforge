@@ -14,7 +14,7 @@ use std::fs;
 #[derive(Debug)]
 pub struct Executor {
     memory: Memory,
-    entry: usize,
+    ip: usize,
 }
 
 impl Executor {
@@ -24,7 +24,7 @@ impl Executor {
 
         Ok(Executor {
             memory: Memory::from(&file),
-            entry: file.entry() as usize,
+            ip: file.entry() as usize,
         })
     }
 
@@ -37,7 +37,9 @@ impl Executor {
         }
         */
 
-        info!("executor: {:x?}", self);
+        let chunk = InstructionChunk::new(&self.memory, &mut self.ip);
+
+        info!("chunk: {:x?}", chunk);
     }
 }
 

@@ -1,3 +1,5 @@
+use super::memory::Memory;
+
 use crate::{Instruction, Kind, parse};
 
 use log::info;
@@ -30,12 +32,11 @@ impl InstructionChunk {
     // instruction we need to emulate), then execute the chunk as a whole,
     // this prevents checking the next instruction for each and every instruction
 
-    pub fn new(read: &[u8]) -> InstructionChunk {
+    pub fn new(memory: &Memory, ip: &mut usize) -> InstructionChunk {
         let mut chunk: Vec<u8> = Vec::new();
-        let mut ip = 0;
 
         loop {
-            let instruction = parse(&read[ip..]);
+            let instruction = parse(&memory.read(*ip..*ip + 16));
 
             info!("instruction: {:?}", instruction);
 
@@ -47,9 +48,9 @@ impl InstructionChunk {
                     };
                 },
                 _ => {
-                    chunk.extend(&read[ip..ip + instruction.size as usize]);
+                    chunk.extend(memory.read(*ip..*ip + instruction.size as usize));
 
-                    ip += instruction.size as usize;
+                    *ip += instruction.size as usize;
                 },
             }
         }

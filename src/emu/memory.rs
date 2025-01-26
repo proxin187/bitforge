@@ -4,7 +4,30 @@ use std::borrow::Borrow;
 use std::ops::Range;
 
 
-#[derive(Debug)]
+pub trait RangeExt {
+    fn intersection<T>(&self, range: T) -> Option<Range<usize>> where T: Borrow<Range<usize>>;
+
+    fn subsection_of<T>(&self, range: T) -> bool where T: Borrow<Range<usize>>;
+}
+
+impl RangeExt for Range<usize> {
+    fn intersection<T>(&self, range: T) -> Option<Range<usize>>
+    where T:
+        Borrow<Range<usize>>,
+    {
+        (range.borrow().start <= self.end && range.borrow().end >= self.start)
+            .then(|| self.start.max(range.borrow().start)..(self.end).min(range.borrow().end))
+    }
+
+    fn subsection_of<T>(&self, range: T) -> bool
+    where T:
+        Borrow<Range<usize>>,
+    {
+        self.start > range.borrow().start && self.end < range.borrow().end
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Segment {
     address: usize,
     data: Vec<u8>,
@@ -18,6 +41,10 @@ impl Segment {
         }
     }
 
+    pub fn range(&self) -> Range<usize> {
+        self.address..self.address + self.data.len()
+    }
+
     pub fn read<'a, T>(&'a self, range: T) -> &'a [u8]
     where T:
         Borrow<Range<usize>>,
@@ -27,24 +54,26 @@ impl Segment {
         &self.data[range.borrow().start - self.address..(range.borrow().end - self.address).min(self.data.len())]
     }
 
-    pub fn intersection<T>(&self, range: T) -> Option<Range<usize>>
+    pub fn trim<T>(&mut self, range: T)
     where T:
-        Borrow<Range<usize>>,
+        Borrow<Range<usize>> + std::fmt::Debug,
     {
-        (range.borrow().start <= self.address + self.data.len() && range.borrow().end >= self.address)
-            .then(|| self.address.max(range.borrow().start)..(self.address + self.data.len()).min(range.borrow().end))
-    }
+        assert!(range.borrow().start >= self.address && range.borrow().end >= self.address);
 
-    pub fn len(&self, address: usize) -> Option<usize> {
-        address.checked_sub(self.address)
-            .and_then(|address| address.checked_sub(self.data.len()))
+        if range.borrow().end < self.address + self.data.len() {
+            self.data = self.data[range.borrow().end - self.address..].to_vec();
+
+            self.address = range.borrow().end;
+        } else if range.borrow().start > self.address {
+            self.data = self.data[..range.borrow().start - self.address].to_vec();
+        }
     }
 }
 
 #[derive(Debug, Default)]
 pub struct Memory {
-    segments: Vec<Segment>,
-    base: usize,
+    pub segments: Vec<Segment>,
+    pub base: usize,
 }
 
 impl<'a> From<&File<'a>> for Memory {
@@ -64,14 +93,13 @@ impl<'a> From<&File<'a>> for Memory {
             base: file.relative_address_base() as usize,
         }
     }
-
 }
 
 impl Memory {
     pub fn read(&self, range: Range<usize>) -> Vec<u8> {
         let mut buffer: Vec<u8> = vec![0; range.end - range.start];
 
-        for (intersection, segment) in self.segments.iter().filter_map(|segment| segment.intersection(&range).map(|intersection| (intersection, segment))) {
+        for (intersection, segment) in self.segments.iter().filter_map(|segment| segment.range().intersection(&range).map(|intersection| (intersection, segment))) {
             let data = segment.read(&intersection);
 
             buffer[intersection.start - range.start..intersection.end - range.start].copy_from_slice(&data);
@@ -80,16 +108,25 @@ impl Memory {
         buffer
     }
 
-    // TODO: this function will clean segments that overlap
-    pub fn clean(&mut self) {
-    }
-
-    // TODO: we only need to get the first intersecting and resize it to fit the data, then we need to
-    // trim/remove the other segments which are overlapping
     pub fn write(&mut self, address: usize, data: &[u8]) {
-        let intersections = self.segments.iter()
-            .filter_map(|segment| segment.intersection(address..address + data.len()).map(|intersection| (intersection, segment)))
-            .collect::<Vec<(Range<usize>, &Segment)>>();
+        let mut new: Vec<Segment> = vec![Segment::new(address, data.to_vec())];
+
+        self.segments.retain(|segment| !segment.range().subsection_of(address..address + data.len()));
+
+        let intersections = self.segments.iter_mut()
+            .filter_map(|segment| segment.range().intersection(address..address + data.len()).map(|intersection| (intersection, segment)));
+
+        for (intersection, segment) in intersections {
+            if intersection.subsection_of(segment.address..segment.address + segment.data.len()) {
+                let rest = segment.data.split_off(intersection.start - segment.address);
+
+                new.push(Segment::new(intersection.end, rest[intersection.end - intersection.start..].to_vec()));
+            } else {
+                segment.trim(intersection);
+            }
+        }
+
+        self.segments.extend(new);
     }
 }
 
@@ -103,7 +140,26 @@ mod tests {
 
         memory.write(99, &[28, 54, 45, 74]);
 
+        assert_eq!(memory.segments, vec![Segment::new(99, vec![28, 54, 45, 74])]);
         assert_eq!(memory.read(100..105), vec![54, 45, 74, 0, 0]);
+
+        memory.write(101, &[85, 93]);
+
+        assert_eq!(memory.segments, vec![Segment::new(99, vec![28, 54]), Segment::new(101, vec![85, 93])]);
+        assert_eq!(memory.read(100..105), vec![54, 85, 93, 0, 0]);
+
+        memory.write(100, &[14, 88]);
+
+        assert_eq!(memory.segments, vec![Segment::new(99, vec![28]), Segment::new(102, vec![93]), Segment::new(100, vec![14, 88])]);
+
+        memory.write(200, &[20, 30, 40, 50, 60, 70, 80]);
+        memory.write(202, &[49, 50, 51]);
+
+        assert_eq!(memory.segments, vec![
+            Segment::new(99, vec![28]),
+            Segment::new(102, vec![93]),
+            Segment::new(100, vec![14, 88])
+        ]);
     }
 }
 
