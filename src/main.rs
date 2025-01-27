@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Exec { path } => {
             let mut executor = Executor::new(&path)?;
 
-            executor.exec();
+            executor.run();
         },
         Command::Trace { path } => {
         },

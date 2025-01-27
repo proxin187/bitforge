@@ -8,12 +8,12 @@ use log::info;
 #[derive(Debug)]
 pub struct InstructionChunk {
     pub terminator: Instruction,
-    pub chunk: Vec<u8>,
+    pub bytes: Vec<u8>,
 }
 
 impl InstructionChunk {
     pub fn new(memory: &Memory, ip: &mut usize) -> InstructionChunk {
-        let mut chunk: Vec<u8> = Vec::new();
+        let mut bytes: Vec<u8> = Vec::new();
 
         loop {
             let instruction = parse(&memory.read(*ip..*ip + 16));
@@ -24,11 +24,11 @@ impl InstructionChunk {
                 Kind::SYSCALL {} => {
                     return InstructionChunk {
                         terminator: instruction,
-                        chunk,
+                        bytes,
                     };
                 },
                 _ => {
-                    chunk.extend(memory.read(*ip..*ip + instruction.size as usize));
+                    bytes.extend(memory.read(*ip..*ip + instruction.size as usize));
 
                     *ip += instruction.size as usize;
                 },

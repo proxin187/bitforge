@@ -4,12 +4,15 @@ mod chunk;
 
 use crate::{Kind, parse};
 
-use syscall::Syscall;
+use chunk::InstructionChunk;
 use memory::Memory;
 
 use object::{Object, File};
 use log::{info, warn};
 
+use std::arch::asm;
+use std::slice;
+use std::mem;
 use std::fs;
 
 
@@ -23,13 +26,11 @@ pub struct Context {
     rsp: u64,
     rsi: u64,
     rdi: u64,
-    rip: u64,
     r: [u64; 7],
 }
 
 #[derive(Debug)]
 pub struct Executor {
-    syscall: Syscall,
     memory: Memory,
     ctx: Context,
     ip: usize,
@@ -41,31 +42,14 @@ impl Executor {
         let file = File::parse(&*data)?;
 
         Ok(Executor {
-            syscall: Syscall::new(),
             memory: Memory::from(&file),
             ctx: Context::default(),
             ip: file.entry() as usize,
         })
     }
 
-    pub fn exec(&mut self) {
-        loop {
-            let bytes = self.memory.read(self.ip..self.ip + 16);
-            let instruction = parse(&bytes);
-
-            match instruction.kind {
-                Kind::MOVModRMImmediate { reg, imm32 } => {
-                },
-                Kind::SYSCALL => {
-                    syscall::perform(&self.ctx);
-                },
-            }
-        }
-
-        /*
-        let mut chunk = InstructionChunk::new(&self.memory, &mut self.ip);
-
-        chunk.chunk.extend(unsafe { slice::from_raw_parts(_restore as *const u8, 8) });
+    fn exec(&mut self, mut chunk: InstructionChunk) {
+        chunk.bytes.extend(unsafe { slice::from_raw_parts(_restore as *const u8, 8) });
 
         // it should be enough to simply add instructions that load the context at the end
         // as the rest of the chunk is scanned and we are therefore shure it will never access or modify our context
@@ -76,17 +60,20 @@ impl Executor {
         // rules:
         //  - rsp (stack pointer) will always stay the same through out the entire chunk, meaning
         //    the rsp will be the same after execution as it was before execution.
+        //  - we could therefore ensure that we dont need to update the stack pointer as it should
+        //    be the same through out the entire execution
 
-        // TODO: does it work to access func after store and load?
-
-        // TODO: maybe we can hardcode the return address here?
-        let func: unsafe extern "C" fn() = unsafe { mem::transmute_copy(&chunk.chunk) };
+        let func: unsafe extern "C" fn() = unsafe { mem::transmute_copy(&chunk.bytes) };
 
         info!("chunk: {:x?}", chunk);
-        info!("func: {:?}", func);
+        info!("func1: {:?}", func);
 
         unsafe {
+            info!("we only get here?");
+
             // store the registers of the emulator before running the chunk
+            //
+            // TODO: this segfaults
             asm!(
                 "push rax",
                 "push rbx",
@@ -94,17 +81,20 @@ impl Executor {
                 "push rdx",
                 "push rsi",
                 "push rdi",
-                "push rbp",
-                "push [rsp - 0x38]",
+
+                // it looks like pushing rbp causes a segfault, we will have to investiage this
+                // "push rbp",
             );
 
             // load in context for the program we are emulating
+            info!("the push is not a problem");
 
             // TODO: this fails because registers like eg. rsp (stack pointer) and rbp (frame pointer)
+            //
+            // TODO: now this segfaults, it is most likely because of rbp here too
             asm!(
                 "mov rbx, {rbx}",
                 "mov rbp, {rbp}",
-                "mov rsp, {rsp}",
                 in("rax") self.ctx.rax,
                 in("rcx") self.ctx.rcx,
                 in("rdx") self.ctx.rdx,
@@ -112,22 +102,26 @@ impl Executor {
                 in("rdi") self.ctx.rdi,
                 rbx = in(reg) self.ctx.rbx,
                 rbp = in(reg) self.ctx.rbp,
-                rsp = in(reg) self.ctx.rsp,
             );
 
-            info!("func: {:?}", func);
+            info!("func2: {:?}", func);
+
+            asm!("int3");
 
             func();
         }
-        */
+    }
+
+    pub fn run(&mut self) {
+        let chunk = InstructionChunk::new(&self.memory, &mut self.ip);
+
+        self.exec(chunk);
     }
 }
 
-/*
 #[naked]
 unsafe extern "C" fn _restore() {
     asm!(
-        "pop rsp",
         "pop rbp",
         "pop rdi",
         "pop rsi",
@@ -135,9 +129,9 @@ unsafe extern "C" fn _restore() {
         "pop rcx",
         "pop rbx",
         "pop rax",
+        "ret",
         options(noreturn),
     );
 }
-*/
 
 
