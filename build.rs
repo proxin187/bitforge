@@ -16,27 +16,26 @@ pub enum OperandKind {
 }
 
 impl OperandKind {
-    pub fn pattern(&self) -> &'static str {
+    pub fn pattern(&self, size: usize) -> String {
         match self {
-            OperandKind::Register => "rm",
-            OperandKind::ModRM => "reg",
-            OperandKind::Vex => "vex",
-            OperandKind::Immediate => "immx",
-            OperandKind::Is4Imz2 => "is4imz2",
-            OperandKind::Implicit => "implicit",
-            OperandKind::Index => "index",
+            OperandKind::Register => String::from("rm"),
+            OperandKind::ModRM => String::from("reg"),
+            OperandKind::Vex => String::from("vex"),
+            OperandKind::Immediate => format!("imm{}", size * 8),
+            OperandKind::Is4Imz2 => String::from("is4imz2"),
+            OperandKind::Implicit => String::from("implicit"),
+            OperandKind::Index => String::from("index"),
         }
     }
 
-    // TODO: we need to dynamically get the size of the immediate value
-    pub fn size(&self, imm_size: usize) -> Option<String> {
+    pub fn size(&self, imm_size: Option<usize>) -> Option<String> {
         match self {
             OperandKind::Register
-                | OperandKind::ModRM
-                | OperandKind::Vex => Some(String::from("u8")),
+                | OperandKind::ModRM => Some(String::from("ModRM")),
+            OperandKind::Vex => Some(String::from("u8")),
             OperandKind::Is4Imz2
                 | OperandKind::Index => Some(String::from("u64")),
-            OperandKind::Immediate => Some(format!("u{}", imm_size * 8)),
+            OperandKind::Immediate => Some(format!("u{}", imm_size.expect("immediate operand but no immediate opcode") * 8)),
             OperandKind::Implicit => None,
         }
     }
@@ -139,7 +138,6 @@ pub enum ImmCode {
 }
 
 impl ImmCode {
-    // TODO: not sure if these sizes are correct, check later, also some sizes are implicit
     pub fn pattern(&self, deref: bool) -> String {
         (1..=self.size())
             .map(|byte| format!("{}imm{},", deref.then(|| "*").unwrap_or_default(), byte * 8))
@@ -148,9 +146,10 @@ impl ImmCode {
     }
 
     pub fn value_ref(&self) -> String {
-        format!("immx: u{}::from_ne_bytes([{}]),", self.size() * 8, self.pattern(true))
+        format!("imm{}: u{}::from_ne_bytes([{}]),", self.size() * 8, self.size() * 8, self.pattern(true))
     }
 
+    // TODO: not sure if these sizes are correct, check later, also some sizes are implicit
     pub fn size(&self) -> usize {
         match self {
             ImmCode::Imm8
@@ -227,16 +226,17 @@ impl Opcode {
     pub fn value_ref(&self) -> String {
         match self {
             Opcode::Basic { .. } | Opcode::PlainCode { .. } => String::new(),
-            Opcode::Reg { .. } => String::from("reg: *reg,"),
             Opcode::ImmCode { code } => code.value_ref(),
-            Opcode::Rm => String::from("rm: *rm,"),
+            Opcode::Reg { .. } => String::from("reg: ModRM::new(*reg),"),
+            Opcode::Rm => String::from("rm: ModRM::new(*rm),"),
         }
     }
 
     pub fn pattern(&self) -> String {
         match self {
             Opcode::Basic { value } => format!("{:#x?},", value),
-            // TODO: maybe use or operator here?
+            // TODO: maybe use "or" operator here in order to make sure we only match with values
+            // that contains the expected register value?
             Opcode::Reg { value } => format!("reg,"),
             Opcode::PlainCode { code } => code.prefix(),
             Opcode::ImmCode { code } => code.pattern(false),
@@ -341,15 +341,21 @@ impl Schematic {
 
     fn add_inst(&mut self, instruction: Instruction) -> Result<(), Box<dyn std::error::Error>> {
         // TODO: maybe mnemonic should also include sizes?
-        self.kind.write_all(format!("{}{} {{", instruction.mnemonic, instruction.operands).as_bytes())?;
+        self.kind.write_all(format!("{}{}", instruction.mnemonic, instruction.operands).as_bytes())?;
 
-        for operand in instruction.operands.operands.iter() {
-            if let Some(size) = instruction.imm_size().and_then(|imm_size| operand.size(imm_size)) {
-                self.kind.write_all(format!("{}: {},", operand.pattern(), size).as_bytes())?;
+        if !instruction.operands.operands.is_empty() {
+            self.kind.write_all(b"{")?;
+
+            for operand in instruction.operands.operands.iter() {
+                if let Some((type_, size)) = operand.size(instruction.imm_size()).zip(instruction.imm_size()) {
+                    self.kind.write_all(format!("{}: {},", operand.pattern(size), type_).as_bytes())?;
+                }
             }
+
+            self.kind.write_all(b"}")?;
         }
 
-        self.kind.write_all(b"},")?;
+        self.kind.write_all(b",")?;
 
         self.out.write_all(b"[")?;
 
@@ -369,7 +375,28 @@ impl Schematic {
     }
 
     fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // TODO: we need to implement SIB displacement bytes, maybe we can generate multiple
+        // versions of one instruction for each displacement or maybe only for each different mod
+        // byte
+
         self.kind.write_all(b"
+            #[derive(Debug)]
+            pub struct ModRM {
+                pub mod_: u8,
+                pub reg: u8,
+                pub rm: u8,
+            }
+
+            impl ModRM {
+                pub fn new(byte: u8) -> ModRM {
+                    ModRM {
+                        mod_: byte >> 6,
+                        reg: (byte >> 3) & 7,
+                        rm: byte & 7,
+                    }
+                }
+            }
+
             #[derive(Debug)]
             pub enum Kind {
         ")?;
@@ -377,7 +404,7 @@ impl Schematic {
         self.out.write_all(b"
             pub mod kind;
 
-            use kind::Kind;
+            use kind::{Kind, ModRM};
 
             #[derive(Debug)]
             pub struct Instruction {
