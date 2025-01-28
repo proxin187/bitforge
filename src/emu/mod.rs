@@ -13,6 +13,7 @@ use log::{info, warn};
 use std::arch::asm;
 use std::slice;
 use std::mem;
+use std::ptr;
 use std::fs;
 
 
@@ -48,8 +49,22 @@ impl Executor {
         })
     }
 
+    #[no_mangle]
     fn exec(&mut self, mut chunk: InstructionChunk) {
-        chunk.bytes.extend(unsafe { slice::from_raw_parts(_restore as *const u8, 8) });
+        chunk.bytes.extend(unsafe { slice::from_raw_parts(_restore as *const u8, 1) });
+
+        unsafe {
+            // TODO: finish this
+            let map = libc::mmap(
+                0 as *mut libc::c_void,
+                chunk.bytes.len(),
+                libc::PROT_READ | libc::PROT_WRITE | libc::PROT_EXEC,
+                libc::MAP_PRIVATE | libc::MAP_ANON,
+                -1,
+                0,
+            );
+
+            ptr::copy(chunk.bytes.as_ptr(), map as *mut u8, chunk.bytes.len());
 
         // it should be enough to simply add instructions that load the context at the end
         // as the rest of the chunk is scanned and we are therefore shure it will never access or modify our context
@@ -62,13 +77,15 @@ impl Executor {
         //    the rsp will be the same after execution as it was before execution.
         //  - we could therefore ensure that we dont need to update the stack pointer as it should
         //    be the same through out the entire execution
+        //
+        // for now we will follow these rules but in the future we will have to add support to
+        // load back the rsp and rbp
 
-        let func: unsafe extern "C" fn() = unsafe { mem::transmute_copy(&chunk.bytes) };
+            let func: unsafe extern "C" fn() = unsafe { mem::transmute_copy(&chunk.bytes) };
 
-        info!("chunk: {:x?}", chunk);
-        info!("func1: {:?}", func);
+            info!("chunk: {:x?}", chunk);
+            info!("func1: {:?}", func);
 
-        unsafe {
             info!("we only get here?");
 
             // store the registers of the emulator before running the chunk
@@ -86,29 +103,42 @@ impl Executor {
                 // "push rbp",
             );
 
-            // load in context for the program we are emulating
-            info!("the push is not a problem");
+            // this corrupts the stack and will therefore cause a segfault in the statement below
+            // info!("the push is not a problem");
 
             // TODO: this fails because registers like eg. rsp (stack pointer) and rbp (frame pointer)
             //
             // TODO: now this segfaults, it is most likely because of rbp here too
+
+            // load in context for the program we are emulating
+            /*
             asm!(
                 "mov rbx, {rbx}",
-                "mov rbp, {rbp}",
                 in("rax") self.ctx.rax,
                 in("rcx") self.ctx.rcx,
                 in("rdx") self.ctx.rdx,
                 in("rsi") self.ctx.rsi,
                 in("rdi") self.ctx.rdi,
                 rbx = in(reg) self.ctx.rbx,
-                rbp = in(reg) self.ctx.rbp,
+            );
+            */
+
+            // info!("func2: {:?}", func);
+
+            // this might segfault because its memory is not marked as executable
+            func();
+
+            asm!(
+                "pop rbp",
+                "pop rdi",
+                "pop rsi",
+                "pop rdx",
+                "pop rcx",
+                "pop rbx",
+                "pop rax",
             );
 
-            info!("func2: {:?}", func);
-
-            asm!("int3");
-
-            func();
+            info!("do we get here?");
         }
     }
 
@@ -122,13 +152,6 @@ impl Executor {
 #[naked]
 unsafe extern "C" fn _restore() {
     asm!(
-        "pop rbp",
-        "pop rdi",
-        "pop rsi",
-        "pop rdx",
-        "pop rcx",
-        "pop rbx",
-        "pop rax",
         "ret",
         options(noreturn),
     );

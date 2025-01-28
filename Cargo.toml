@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.26", features = ["derive"] }
+libc = "0.2.2"
 env_logger = "0.11.6"
 log = "0.4.25"
 object = "0.36.7"
