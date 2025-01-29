@@ -1,24 +1,16 @@
 use super::Context;
 
+use log::info;
 
-// TODO: add support for rules
 
-#[derive(Debug)]
-pub struct Syscall {
-}
+pub fn perform(ctx: Context) -> Option<Context> {
+    match ctx.rax {
+        60 => {
+            info!("exited with status code: {}", ctx.rdi);
 
-impl Syscall {
-    pub fn new() -> Syscall {
-        Syscall {
-        }
-    }
-
-    pub fn perform(&self, ctx: &Context) {
-        match ctx.rax {
-            _ => {
-                // TODO: emulate the behaviour of invalid syscall
-            },
-        }
+            None
+        },
+        _ => unimplemented!(),
     }
 }
 
