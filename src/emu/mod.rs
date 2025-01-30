@@ -69,7 +69,7 @@ impl Executor {
     }
 
     pub fn run(&mut self) {
-       while !self.should_close {
+        while !self.should_close {
             let chunk = InstructionChunk::new(&self.memory, &mut self.ip);
 
             if !chunk.bytes.is_empty() {
