@@ -5,7 +5,7 @@ segment readable executable
 entry start
 
 start:
-    mov rdi, 0
+    mov rdi, 9
     mov rax, 60
     syscall
 

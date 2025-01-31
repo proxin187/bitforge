@@ -15,7 +15,8 @@ use log::{info, warn};
 use std::fs;
 
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub struct Context {
     rax: u64,
     rbx: u64,
@@ -26,6 +27,22 @@ pub struct Context {
     rsi: u64,
     rdi: u64,
     r: [u64; 7],
+}
+
+impl Context {
+    pub fn new() -> Context {
+        Context {
+            rax: 0,
+            rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rbp: 0,
+            rsp: 0x1001a8,
+            rsi: 0,
+            rdi: 0,
+            r: [0; 7],
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -44,7 +61,7 @@ impl Executor {
 
         Ok(Executor {
             memory: Memory::from(&file),
-            ctx: Context::default(),
+            ctx: Context::new(),
             jit: Jit::new(),
             ip: file.entry() as usize,
             should_close: false,

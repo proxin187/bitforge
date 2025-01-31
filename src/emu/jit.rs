@@ -36,8 +36,10 @@ impl Jit {
 
     #[no_mangle]
     pub fn exec(&mut self, bytes: &[u8], ctx: &Context) -> Context {
-        let mut output = Context::default();
-        let mut rsp: u64;
+        let output = Context::new();
+        let rsp: u64;
+        let rbp: u64;
+        let restore: Vec<u8>;
 
         unsafe {
             // TODO: this can be procedurally generated instead of hardcoding it
@@ -49,23 +51,31 @@ impl Jit {
                 vec![0x48, 0xbf], ctx.rdi.to_ne_bytes().to_vec(),
                 vec![0x48, 0xbb], ctx.rbx.to_ne_bytes().to_vec(),
                 vec![0x48, 0xbc], ctx.rsp.to_ne_bytes().to_vec(),
+                vec![0x48, 0xbd], ctx.rbp.to_ne_bytes().to_vec(),
             ].concat();
 
             asm!(
                 "mov {rsp}, rsp",
-                "nop",
-                "nop",
-                "nop",
-                "nop",
-                "nop",
-                "nop",
+                "mov {rbp}, rbp",
                 rsp = out(reg) rsp,
+                rbp = out(reg) rbp,
             );
 
-            // TODO: we need to figure out whether this increments the stack pointer, we could
-            // ensure it doesnt increment by predefining it as an empty Vec
-            let restore: Vec<u8> = vec![
-                vec![0x48, 0xbc], rsp.to_ne_bytes().to_vec(),
+            restore = vec![
+                // mov r9, {address of context}
+                vec![0x49, 0xb9], ((&output as *const Context) as u64).to_ne_bytes().to_vec(),
+
+                vec![0x49, 0x89, 0x01],         // mov [r9], rax
+                vec![0x49, 0x89, 0x59, 0x08],   // mov [r9 + 8], rbx
+                vec![0x49, 0x89, 0x49, 0x10],   // mov [r9 + 16], rcx
+                vec![0x49, 0x89, 0x51, 0x18],   // mov [r9 + 24], rdx
+                vec![0x49, 0x89, 0x69, 0x20],   // mov [r9 + 32], rbp
+                vec![0x49, 0x89, 0x61, 0x28],   // mov [r9 + 40], rsp
+                vec![0x49, 0x89, 0x71, 0x30],   // mov [r9 + 48], rsi
+                vec![0x49, 0x89, 0x79, 0x38],   // mov [r9 + 56], rdi
+
+                vec![0x48, 0xbc], (rsp - 8).to_ne_bytes().to_vec(),
+                vec![0x48, 0xbd], rbp.to_ne_bytes().to_vec(),
                 vec!(0xc3),
             ].concat();
 
@@ -76,19 +86,6 @@ impl Jit {
             ptr::copy(restore.as_ptr(), self.ptr.add(entry.len() + bytes.len()), restore.len());
 
             mem::transmute::<*mut u8, unsafe extern "C" fn()>(self.ptr)();
-
-            // TODO: this might need to be embeded in restore as that would be more consistent
-            // this could be done by embeding the memory addresses of output in the mov
-            // instructions
-            asm!(
-                "mov {rbx}, rbx",
-                out("rax") output.rax,
-                out("rcx") output.rcx,
-                out("rdx") output.rdx,
-                out("rsi") output.rsi,
-                out("rdi") output.rdi,
-                rbx = out(reg) output.rbx,
-            );
 
             output
         }
