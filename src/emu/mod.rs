@@ -1,3 +1,4 @@
+mod translate;
 mod syscall;
 mod memory;
 mod chunk;
