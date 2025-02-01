@@ -48,7 +48,6 @@ impl Context {
 
 #[derive(Debug)]
 pub struct Executor {
-    memory: Memory,
     ctx: Context,
     jit: Jit,
     ip: usize,
@@ -60,8 +59,9 @@ impl Executor {
         let data = fs::read(path)?;
         let file = File::parse(&*data)?;
 
+        memory::load(&file)?;
+
         Ok(Executor {
-            memory: Memory::from(&file),
             ctx: Context::new(),
             jit: Jit::new(),
             ip: file.entry() as usize,
@@ -86,9 +86,9 @@ impl Executor {
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         while !self.should_close {
-            let chunk = InstructionChunk::new(&self.memory, &mut self.ip);
+            let chunk = InstructionChunk::new(&mut self.ip)?;
 
             if !chunk.bytes.is_empty() {
                 self.ctx = self.jit.exec(&chunk.bytes, &self.ctx);
@@ -96,6 +96,8 @@ impl Executor {
 
             self.emulate(chunk.terminator);
         }
+
+        Ok(())
     }
 }
 

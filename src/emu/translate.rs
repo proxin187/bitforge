@@ -1,8 +1,8 @@
-use crate::Instruction;
+use crate::{Instruction, Kind};
 
 
 pub struct Translate {
-    out: Vec<u8>,
+    pub out: Vec<u8>,
 }
 
 impl Translate {
@@ -13,6 +13,9 @@ impl Translate {
     }
 
     pub fn process(&mut self, instruction: Instruction, bytes: &[u8]) {
+        match instruction.kind {
+             _ => self.out.extend(bytes),
+        }
     }
 }
 

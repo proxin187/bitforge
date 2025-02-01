@@ -7,6 +7,7 @@ use emu::Executor;
 
 use clap::{Parser, Subcommand};
 use env_logger::{Builder, Env};
+use log::info;
 
 include!(concat!(env!("OUT_DIR"), "/instructions.rs"));
 
@@ -41,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Exec { path } => {
             let mut executor = Executor::new(&path)?;
 
-            executor.run();
+            executor.run()?;
         },
         Command::Trace { path } => {
         },

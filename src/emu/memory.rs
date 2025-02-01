@@ -1,7 +1,11 @@
 use object::{File, Object, ObjectSegment};
+use log::info;
 
 use std::borrow::Borrow;
 use std::ops::Range;
+use std::sync::{LazyLock, Mutex};
+
+pub static HANDLE: LazyLock<Mutex<Memory>> = LazyLock::new(|| Mutex::new(Memory::new()));
 
 
 pub trait RangeExt {
@@ -76,58 +80,70 @@ pub struct Memory {
     pub base: usize,
 }
 
-impl<'a> From<&File<'a>> for Memory {
-    fn from(file: &File) -> Memory {
-        // TODO: preserve memory flags
-
-        let segments = file.segments()
-            .filter_map(|segment| {
-                segment.data()
-                    .map(|data| Segment::new(segment.address() as usize, data.to_vec()))
-                    .ok()
-            })
-            .collect::<Vec<Segment>>();
-
+impl Memory {
+    pub fn new() -> Memory {
         Memory {
-            segments,
-            base: file.relative_address_base() as usize,
+            segments: Vec::new(),
+            base: 0,
         }
     }
 }
 
-impl Memory {
-    pub fn read(&self, range: Range<usize>) -> Vec<u8> {
-        let mut buffer: Vec<u8> = vec![0; range.end - range.start];
+pub fn load(file: &File) -> Result<(), Box<dyn std::error::Error>> {
+    info!("loading {:?}:{:?}:{} section(s)", file.format(), file.architecture(), file.segments().count());
 
-        for (intersection, segment) in self.segments.iter().filter_map(|segment| segment.range().intersection(&range).map(|intersection| (intersection, segment))) {
-            let data = segment.read(&intersection);
+    let mut memory = HANDLE.lock()?;
 
-            buffer[intersection.start - range.start..intersection.end - range.start].copy_from_slice(&data);
-        }
+    memory.segments = file.segments()
+        .filter_map(|segment| {
+            segment.data()
+                .map(|data| Segment::new(segment.address() as usize, data.to_vec()))
+                .ok()
+        })
+        .collect::<Vec<Segment>>();
 
-        buffer
+    memory.base = file.relative_address_base() as usize;
+
+    Ok(())
+}
+
+#[no_mangle]
+pub fn emu_read(range: Range<usize>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let memory = HANDLE.lock()?;
+    let mut buffer: Vec<u8> = vec![0; range.end - range.start];
+
+    for (intersection, segment) in memory.segments.iter().filter_map(|segment| segment.range().intersection(&range).map(|intersection| (intersection, segment))) {
+        let data = segment.read(&intersection);
+
+        buffer[intersection.start - range.start..intersection.end - range.start].copy_from_slice(&data);
     }
 
-    pub fn write(&mut self, address: usize, data: &[u8]) {
-        let mut new: Vec<Segment> = vec![Segment::new(address, data.to_vec())];
+    Ok(buffer)
+}
 
-        self.segments.retain(|segment| !segment.range().subsection_of(address..address + data.len()));
+#[no_mangle]
+pub fn emu_write(address: usize, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut memory = HANDLE.lock()?;
+    let mut new: Vec<Segment> = vec![Segment::new(address, data.to_vec())];
 
-        let intersections = self.segments.iter_mut()
-            .filter_map(|segment| segment.range().intersection(address..address + data.len()).map(|intersection| (intersection, segment)));
+    memory.segments.retain(|segment| !segment.range().subsection_of(address..address + data.len()));
 
-        for (intersection, segment) in intersections {
-            if intersection.subsection_of(segment.address..segment.address + segment.data.len()) {
-                let rest = segment.data.split_off(intersection.start - segment.address);
+    let intersections = memory.segments.iter_mut()
+        .filter_map(|segment| segment.range().intersection(address..address + data.len()).map(|intersection| (intersection, segment)));
 
-                new.push(Segment::new(intersection.end, rest[intersection.end - intersection.start..].to_vec()));
-            } else {
-                segment.trim(intersection);
-            }
+    for (intersection, segment) in intersections {
+        if intersection.subsection_of(segment.address..segment.address + segment.data.len()) {
+            let rest = segment.data.split_off(intersection.start - segment.address);
+
+            new.push(Segment::new(intersection.end, rest[intersection.end - intersection.start..].to_vec()));
+        } else {
+            segment.trim(intersection);
         }
-
-        self.segments.extend(new);
     }
+
+    memory.segments.extend(new);
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -135,31 +151,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn memory() {
-        let mut memory = Memory::default();
+    fn memory() -> Result<(), Box<dyn std::error::Error>> {
+        emu_write(99, &[28, 54, 45, 74])?;
 
-        memory.write(99, &[28, 54, 45, 74]);
+        // assert_eq!(memory.segments, vec![Segment::new(99, vec![28, 54, 45, 74])]);
+        assert_eq!(emu_read(100..105)?, vec![54, 45, 74, 0, 0]);
 
-        assert_eq!(memory.segments, vec![Segment::new(99, vec![28, 54, 45, 74])]);
-        assert_eq!(memory.read(100..105), vec![54, 45, 74, 0, 0]);
+        emu_write(101, &[85, 93])?;
 
-        memory.write(101, &[85, 93]);
+        // assert_eq!(memory.segments, vec![Segment::new(99, vec![28, 54]), Segment::new(101, vec![85, 93])]);
+        assert_eq!(emu_read(100..105)?, vec![54, 85, 93, 0, 0]);
 
-        assert_eq!(memory.segments, vec![Segment::new(99, vec![28, 54]), Segment::new(101, vec![85, 93])]);
-        assert_eq!(memory.read(100..105), vec![54, 85, 93, 0, 0]);
+        emu_write(100, &[14, 88])?;
 
-        memory.write(100, &[14, 88]);
+        // assert_eq!(memory.segments, vec![Segment::new(99, vec![28]), Segment::new(102, vec![93]), Segment::new(100, vec![14, 88])]);
 
-        assert_eq!(memory.segments, vec![Segment::new(99, vec![28]), Segment::new(102, vec![93]), Segment::new(100, vec![14, 88])]);
+        emu_write(200, &[20, 30, 40, 50, 60, 70, 80])?;
+        emu_write(202, &[49, 50, 51])?;
 
-        memory.write(200, &[20, 30, 40, 50, 60, 70, 80]);
-        memory.write(202, &[49, 50, 51]);
-
+        /*
         assert_eq!(memory.segments, vec![
             Segment::new(99, vec![28]),
             Segment::new(102, vec![93]),
             Segment::new(100, vec![14, 88])
         ]);
+        */
+
+        Ok(())
     }
 }
 

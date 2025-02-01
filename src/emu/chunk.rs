@@ -1,4 +1,4 @@
-use super::memory::Memory;
+use super::memory;
 
 use crate::{Instruction, Kind, parse};
 
@@ -12,23 +12,23 @@ pub struct InstructionChunk {
 }
 
 impl InstructionChunk {
-    pub fn new(memory: &Memory, ip: &mut usize) -> InstructionChunk {
+    pub fn new(ip: &mut usize) -> Result<InstructionChunk, Box<dyn std::error::Error>> {
         let mut bytes: Vec<u8> = Vec::new();
 
         loop {
-            let instruction = parse(&memory.read(*ip..*ip + 16));
+            let instruction = parse(&memory::emu_read(*ip..*ip + 16)?);
 
             info!("instruction: {:?}", instruction);
 
             match instruction.kind {
                 Kind::SYSCALL {} => {
-                    return InstructionChunk {
+                    return Ok(InstructionChunk {
                         terminator: instruction,
                         bytes,
-                    };
+                    });
                 },
                 _ => {
-                    bytes.extend(memory.read(*ip..*ip + instruction.size as usize));
+                    bytes.extend(memory::emu_read(*ip..*ip + instruction.size as usize)?);
 
                     *ip += instruction.size as usize;
                 },
