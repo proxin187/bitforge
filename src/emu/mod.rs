@@ -27,7 +27,6 @@ pub struct Context {
     rsp: u64,
     rsi: u64,
     rdi: u64,
-    r: [u64; 7],
 }
 
 impl Context {
@@ -41,7 +40,6 @@ impl Context {
             rsp: 0x1001a8,
             rsi: 0,
             rdi: 0,
-            r: [0; 7],
         }
     }
 }
@@ -71,8 +69,6 @@ impl Executor {
 
     fn emulate(&mut self, instruction: Instruction) {
         match instruction.kind {
-            Kind::MOVModRMImmediate { reg, imm32 } => {
-            },
             Kind::SYSCALL => {
                 match syscall::perform(self.ctx) {
                     Some(ctx) => {
@@ -83,12 +79,15 @@ impl Executor {
                     },
                 }
             },
+            _ => unreachable!(),
         }
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         while !self.should_close {
             let chunk = InstructionChunk::new(&mut self.ip)?;
+
+            break;
 
             if !chunk.bytes.is_empty() {
                 self.ctx = self.jit.exec(&chunk.bytes, &self.ctx);

@@ -1,3 +1,6 @@
+use crate::emu::Context;
+use crate::kind::ModRM;
+
 use object::{File, Object, ObjectSegment};
 use log::info;
 
@@ -31,7 +34,7 @@ impl RangeExt for Range<usize> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
     address: usize,
     data: Vec<u8>,
@@ -107,8 +110,7 @@ pub fn load(file: &File) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[no_mangle]
-pub fn emu_read(range: Range<usize>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub fn read(range: Range<usize>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let memory = HANDLE.lock()?;
     let mut buffer: Vec<u8> = vec![0; range.end - range.start];
 
@@ -121,8 +123,7 @@ pub fn emu_read(range: Range<usize>) -> Result<Vec<u8>, Box<dyn std::error::Erro
     Ok(buffer)
 }
 
-#[no_mangle]
-pub fn emu_write(address: usize, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn write(address: usize, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let mut memory = HANDLE.lock()?;
     let mut new: Vec<Segment> = vec![Segment::new(address, data.to_vec())];
 
@@ -146,36 +147,61 @@ pub fn emu_write(address: usize, data: &[u8]) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+pub fn segments() -> Result<Vec<Segment>, Box<dyn std::error::Error>> {
+    HANDLE.lock()
+        .map(|memory| memory.segments.clone())
+        .map_err(|err| err.into())
+}
+
+#[no_mangle]
+pub fn resolve_address(context: Context, modrm: ModRM) {
+    match modrm.mod_ {
+        0b00 => {
+        },
+        0b01 => {
+        },
+        0b10 => {
+        },
+        _ => unreachable!(),
+    }
+}
+
+#[no_mangle]
+pub fn read_raw(address: usize) {
+}
+
+#[no_mangle]
+pub fn write_raw(address: usize, value: u64) {
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::emu::memory::{self, Segment};
 
     #[test]
     fn memory() -> Result<(), Box<dyn std::error::Error>> {
-        emu_write(99, &[28, 54, 45, 74])?;
+        memory::write(99, &[28, 54, 45, 74])?;
 
-        // assert_eq!(memory.segments, vec![Segment::new(99, vec![28, 54, 45, 74])]);
-        assert_eq!(emu_read(100..105)?, vec![54, 45, 74, 0, 0]);
+        assert_eq!(memory::segments()?, vec![Segment::new(99, vec![28, 54, 45, 74])]);
+        assert_eq!(memory::read(100..105)?, vec![54, 45, 74, 0, 0]);
 
-        emu_write(101, &[85, 93])?;
+        memory::write(101, &[85, 93])?;
 
-        // assert_eq!(memory.segments, vec![Segment::new(99, vec![28, 54]), Segment::new(101, vec![85, 93])]);
-        assert_eq!(emu_read(100..105)?, vec![54, 85, 93, 0, 0]);
+        assert_eq!(memory::segments()?, vec![Segment::new(99, vec![28, 54]), Segment::new(101, vec![85, 93])]);
+        assert_eq!(memory::read(100..105)?, vec![54, 85, 93, 0, 0]);
 
-        emu_write(100, &[14, 88])?;
+        memory::write(100, &[14, 88])?;
 
-        // assert_eq!(memory.segments, vec![Segment::new(99, vec![28]), Segment::new(102, vec![93]), Segment::new(100, vec![14, 88])]);
+        assert_eq!(memory::segments()?, vec![Segment::new(99, vec![28]), Segment::new(102, vec![93]), Segment::new(100, vec![14, 88])]);
 
-        emu_write(200, &[20, 30, 40, 50, 60, 70, 80])?;
-        emu_write(202, &[49, 50, 51])?;
+        memory::write(200, &[20, 30, 40, 50, 60, 70, 80])?;
+        memory::write(202, &[49, 50, 51])?;
 
-        /*
-        assert_eq!(memory.segments, vec![
+        assert_eq!(memory::segments()?, vec![
             Segment::new(99, vec![28]),
             Segment::new(102, vec![93]),
             Segment::new(100, vec![14, 88])
         ]);
-        */
 
         Ok(())
     }

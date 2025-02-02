@@ -16,7 +16,7 @@ impl InstructionChunk {
         let mut bytes: Vec<u8> = Vec::new();
 
         loop {
-            let instruction = parse(&memory::emu_read(*ip..*ip + 16)?);
+            let instruction = parse(&memory::read(*ip..*ip + 16)?);
 
             info!("instruction: {:?}", instruction);
 
@@ -28,7 +28,7 @@ impl InstructionChunk {
                     });
                 },
                 _ => {
-                    bytes.extend(memory::emu_read(*ip..*ip + instruction.size as usize)?);
+                    bytes.extend(memory::read(*ip..*ip + instruction.size as usize)?);
 
                     *ip += instruction.size as usize;
                 },

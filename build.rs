@@ -208,6 +208,14 @@ pub enum Opcode {
 }
 
 impl Opcode {
+    pub fn identifier(&self) -> Option<String> {
+        match self {
+            Opcode::ImmCode { code } => Some(format!("{:?}", code)),
+            Opcode::PlainCode { code } => Some(format!("{:?}", code)),
+            _ => None,
+        }
+    }
+
     pub fn imm_size(&self) -> Option<usize> {
         match self {
             Opcode::ImmCode { code } => Some(code.size()),
@@ -292,6 +300,9 @@ impl Instruction {
 
         let mnemonic = parts.next().map(|mnemonic| mnemonic.to_string())?;
 
+        // TODO: we will have to parse the args and generate better instruction decoding with this.
+        // eg. we can have only one instruction per mnemonic and multiple options for the args of
+        // the instruction through for example an enum
         parts.next();
 
         let operands = parts.next().map(|operands| Operands::from(operands))?;
@@ -309,6 +320,10 @@ impl Instruction {
             operands,
             opcodes,
         })
+    }
+
+    pub fn identifier(&self) -> String {
+        format!("{}{}", self.mnemonic, self.opcodes.iter().filter_map(|opcode| opcode.identifier()).collect::<String>())
     }
 
     pub fn size(&self) -> usize {
@@ -340,8 +355,7 @@ impl Schematic {
     }
 
     fn add_inst(&mut self, instruction: Instruction) -> Result<(), Box<dyn std::error::Error>> {
-        // TODO: maybe mnemonic should also include sizes?
-        self.kind.write_all(format!("{}{}", instruction.mnemonic, instruction.operands).as_bytes())?;
+        self.kind.write_all(instruction.identifier().as_bytes())?;
 
         if !instruction.operands.operands.is_empty() {
             self.kind.write_all(b"{")?;
@@ -363,7 +377,7 @@ impl Schematic {
             self.out.write_all(opcode.pattern().as_bytes())?;
         }
 
-        self.out.write_all(format!("..] => Instruction {{ size: {}, kind: Kind::{}{} {{", instruction.size(), instruction.mnemonic, instruction.operands).as_bytes())?;
+        self.out.write_all(format!("..] => Instruction {{ size: {}, kind: Kind::{} {{", instruction.size(), instruction.identifier()).as_bytes())?;
 
         for opcode in instruction.opcodes.iter() {
             self.out.write_all(opcode.value_ref().as_bytes())?;
