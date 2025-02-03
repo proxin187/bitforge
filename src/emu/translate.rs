@@ -1,4 +1,4 @@
-use crate::{Instruction, Kind};
+use crate::{Instruction, Kind, Arg};
 
 
 pub struct Translate {
@@ -16,9 +16,7 @@ impl Translate {
     // read or write function
     pub fn process(&mut self, instruction: Instruction, bytes: &[u8]) {
         match instruction.kind {
-            Kind::MOVHlexrO64Imm32Extended { reg, imm32 } => match reg.mod_ {
-                0b00 | 0b01 | 0b10 => {
-                },
+            Kind::MOV(reg, imm32) => match reg {
                 _ => {},
             },
              _ => {},

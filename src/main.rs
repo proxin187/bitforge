@@ -1,5 +1,6 @@
 #![feature(naked_functions)]
 
+mod instruction;
 mod config;
 mod emu;
 

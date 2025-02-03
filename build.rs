@@ -237,7 +237,7 @@ impl Opcode {
             Opcode::Basic { .. } | Opcode::PlainCode { .. } => String::new(),
             Opcode::ImmCode { code } => code.value_ref(),
             Opcode::Reg { .. } => String::from("Arg::ModRM(ModRM::new(*reg)),"),
-            Opcode::Rm => String::from("Arg::ModRM(ModRM::new(*rm)),"),
+            Opcode::Rm => String::from("Arg::ModRM(ModRM::new(*rm)),Arg::ModRM(ModRM::new(*rm)),"),
         }
     }
 
@@ -408,7 +408,8 @@ impl Schematic {
             #[derive(Debug)]
             pub enum Arg {
                 Imm32(u32),
-                ModRM(ModRM),
+                Rm32(ModRM),
+                Rm64(ModRM),
             }
 
             #[derive(Debug)]
@@ -418,7 +419,7 @@ impl Schematic {
         self.out.write_all(b"
             pub mod kind;
 
-            use kind::{Kind, ModRM};
+            use kind::{Kind, ModRM, Arg};
 
             #[derive(Debug)]
             pub struct Instruction {
