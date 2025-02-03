@@ -1,4 +1,5 @@
 use std::io::{BufReader, BufRead, Lines, Write};
+use std::iter::{Peekable, FilterMap};
 use std::path::Path;
 use std::fs::File;
 use std::env;
@@ -146,7 +147,7 @@ impl ImmCode {
     }
 
     pub fn value_ref(&self) -> String {
-        format!("imm{}: u{}::from_ne_bytes([{}]),", self.size() * 8, self.size() * 8, self.pattern(true))
+        format!("Arg::Imm{}(u{}::from_ne_bytes([{}])),", self.size() * 8, self.size() * 8, self.pattern(true))
     }
 
     // TODO: not sure if these sizes are correct, check later, also some sizes are implicit
@@ -235,8 +236,8 @@ impl Opcode {
         match self {
             Opcode::Basic { .. } | Opcode::PlainCode { .. } => String::new(),
             Opcode::ImmCode { code } => code.value_ref(),
-            Opcode::Reg { .. } => String::from("reg: ModRM::new(*reg),"),
-            Opcode::Rm => String::from("rm: ModRM::new(*rm),"),
+            Opcode::Reg { .. } => String::from("Arg::ModRM(ModRM::new(*reg)),"),
+            Opcode::Rm => String::from("Arg::ModRM(ModRM::new(*rm)),"),
         }
     }
 
@@ -300,9 +301,6 @@ impl Instruction {
 
         let mnemonic = parts.next().map(|mnemonic| mnemonic.to_string())?;
 
-        // TODO: we will have to parse the args and generate better instruction decoding with this.
-        // eg. we can have only one instruction per mnemonic and multiple options for the args of
-        // the instruction through for example an enum
         parts.next();
 
         let operands = parts.next().map(|operands| Operands::from(operands))?;
@@ -322,10 +320,6 @@ impl Instruction {
         })
     }
 
-    pub fn identifier(&self) -> String {
-        format!("{}{}", self.mnemonic, self.opcodes.iter().filter_map(|opcode| opcode.identifier()).collect::<String>())
-    }
-
     pub fn size(&self) -> usize {
         self.opcodes.iter().map(|opcode| opcode.size()).sum()
     }
@@ -338,52 +332,52 @@ impl Instruction {
 }
 
 pub struct Schematic {
-    lines: Lines<BufReader<File>>,
+    schematic: File,
     kind: File,
     out: File,
 }
 
 impl Schematic {
     pub fn new(path: &Path) -> Result<Schematic, Box<dyn std::error::Error>> {
-        let reader = BufReader::new(File::open("schematics/simple.dat")?);
-
         Ok(Schematic {
-            lines: reader.lines(),
+            schematic: File::open("schematics/simple.dat")?,
             kind: File::create(path.join("kind.rs"))?,
             out: File::create(path.join("instructions.rs"))?,
         })
     }
 
-    fn add_inst(&mut self, instruction: Instruction) -> Result<(), Box<dyn std::error::Error>> {
-        self.kind.write_all(instruction.identifier().as_bytes())?;
+    fn add_inst(&mut self, instruction: Instruction, variants: Vec<Instruction>) -> Result<(), Box<dyn std::error::Error>> {
+        self.kind.write_all(instruction.mnemonic.as_bytes())?;
 
         if !instruction.operands.operands.is_empty() {
-            self.kind.write_all(b"{")?;
+            self.kind.write_all(b"(")?;
 
-            for operand in instruction.operands.operands.iter() {
-                if let Some((type_, size)) = operand.size(instruction.imm_size()).zip(instruction.imm_size()) {
-                    self.kind.write_all(format!("{}: {},", operand.pattern(size), type_).as_bytes())?;
-                }
+            for _ in instruction.operands.operands.iter() {
+                self.kind.write_all(format!("Arg,").as_bytes())?;
             }
 
-            self.kind.write_all(b"}")?;
+            self.kind.write_all(b")")?;
         }
 
         self.kind.write_all(b",")?;
 
-        self.out.write_all(b"[")?;
+        for instruction in variants {
+            self.out.write_all(b"[")?;
 
-        for opcode in instruction.opcodes.iter() {
-            self.out.write_all(opcode.pattern().as_bytes())?;
+            for opcode in instruction.opcodes.iter() {
+                self.out.write_all(opcode.pattern().as_bytes())?;
+            }
+
+            self.out.write_all(format!("..] => Instruction {{ size: {}, kind: Kind::{}(", instruction.size(), instruction.mnemonic).as_bytes())?;
+
+            // TODO: for instructions that encode 2 arguments through modrm we will have to do
+            // something
+            for opcode in instruction.opcodes.iter() {
+                self.out.write_all(opcode.value_ref().as_bytes())?;
+            }
+
+            self.out.write_all(b")},")?;
         }
-
-        self.out.write_all(format!("..] => Instruction {{ size: {}, kind: Kind::{} {{", instruction.size(), instruction.identifier()).as_bytes())?;
-
-        for opcode in instruction.opcodes.iter() {
-            self.out.write_all(opcode.value_ref().as_bytes())?;
-        }
-
-        self.out.write_all(b"}},")?;
 
         Ok(())
     }
@@ -412,6 +406,12 @@ impl Schematic {
             }
 
             #[derive(Debug)]
+            pub enum Arg {
+                Imm32(u32),
+                ModRM(ModRM),
+            }
+
+            #[derive(Debug)]
             pub enum Kind {
         ")?;
 
@@ -430,17 +430,18 @@ impl Schematic {
                 match bytes {
         ")?;
 
-        while let Some(line) = self.lines.next() {
-            match line {
-                Ok(line) => {
-                    if let Some(instruction) = Instruction::parse(&line) {
-                        self.add_inst(instruction)?;
-                    }
-                },
-                Err(err) => {
-                    println!("cargo:warning=err: {:?}", err);
-                },
+        let mut iter = BufReader::new(self.schematic.try_clone()?).lines()
+            .filter_map(|line| line.ok().and_then(|string| Instruction::parse(&string)))
+            .peekable();
+
+        while let Some(instruction) = iter.next() {
+            let mut variants: Vec<Instruction> = Vec::new();
+
+            while let Some(line) = iter.next_if(|line| line.mnemonic == instruction.mnemonic) {
+                variants.push(line);
             }
+
+            self.add_inst(instruction, variants)?;
         }
 
         self.out.write_all(b"
