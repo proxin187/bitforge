@@ -1,4 +1,5 @@
 mod decode;
+mod error;
 
 
 #[derive(Debug)]
@@ -6,6 +7,7 @@ pub struct Instruction {
     code: Code,
     ops: Vec<Operand>,
     size: usize,
+    rex: Option<u8>,
 }
 
 #[derive(Debug)]
