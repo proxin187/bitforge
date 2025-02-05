@@ -1,5 +1,4 @@
 use crate::emu::Context;
-use crate::kind::ModRM;
 
 use object::{File, Object, ObjectSegment};
 use log::info;
@@ -151,19 +150,6 @@ pub fn segments() -> Result<Vec<Segment>, Box<dyn std::error::Error>> {
     HANDLE.lock()
         .map(|memory| memory.segments.clone())
         .map_err(|err| err.into())
-}
-
-#[no_mangle]
-pub fn resolve_address(context: Context, modrm: ModRM) {
-    match modrm.mod_ {
-        0b00 => {
-        },
-        0b01 => {
-        },
-        0b10 => {
-        },
-        _ => unreachable!(),
-    }
 }
 
 #[no_mangle]

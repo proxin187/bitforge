@@ -11,8 +11,6 @@ use clap::{Parser, Subcommand};
 use env_logger::{Builder, Env};
 use log::info;
 
-include!(concat!(env!("OUT_DIR"), "/instructions.rs"));
-
 
 #[derive(Subcommand)]
 pub enum Command {

@@ -2,6 +2,12 @@ pub mod decode;
 pub mod error;
 
 
+pub enum AccessKind {
+    Read,
+    Write,
+    Both,
+}
+
 #[derive(Debug)]
 pub struct Instruction {
     pub code: Code,
@@ -15,6 +21,11 @@ impl Instruction {
     // that does the same except with registers, for examples mov [rsp + 4], 2 would be turned into
     // mov rax, 4, and then some instructions to write it into emulated memory
     pub fn to_reg(&self) {
+    }
+
+    // TODO: this will say whether a instruction reads or writes any memory
+    pub fn memory_access(&self) -> Option<AccessKind> {
+        todo!();
     }
 }
 

@@ -63,10 +63,10 @@ impl Decoder {
                 if sib.base == 0b101 {
                     match modrm.mod_ {
                         0b00 | 0b10 => {
-                            memory.displacement.replace(self.disp32(None)?);
+                            memory.displacement.replace(Displacement::Disp32((self.read32()?, 1)));
                         },
                         0b01 => {
-                            memory.displacement.replace(self.disp8(None)?);
+                            memory.displacement.replace(Displacement::Disp8((self.read8()?, 1)));
                         },
                         _ => return Err(Error::InvalidEncoding),
                     }
@@ -79,17 +79,15 @@ impl Decoder {
     }
 
     #[inline]
-    fn disp8(&mut self, multiplier: Option<u8>) -> Result<Displacement, Error> {
-        let byte = self.bytes.next().ok_or(Error::InsufficientBytes)?;
-
-        Ok(Displacement::Disp8((byte, multiplier.unwrap_or(1))))
+    fn read8(&mut self) -> Result<u8, Error> {
+        self.bytes.next().ok_or(Error::InsufficientBytes)
     }
 
     #[inline]
-    fn disp32(&mut self, multiplier: Option<u8>) -> Result<Displacement, Error> {
+    fn read32(&mut self) -> Result<u32, Error> {
         let bytes = self.bytes.next_chunk().map_err(|_| Error::InsufficientBytes)?;
 
-        Ok(Displacement::Disp32((u32::from_ne_bytes(bytes), multiplier.unwrap_or(1))))
+        Ok(u32::from_ne_bytes(bytes))
     }
 
     fn modrm(&mut self) -> Result<(Operand, Register), Error> {
@@ -97,20 +95,20 @@ impl Decoder {
 
         match modrm.mod_ {
             0b00 => match modrm.rm {
-                0b101 => Ok((Operand::Memory(Memory::new(None, None, None, Some(self.disp32(Some(2))?))), Register::from(modrm.reg))),
+                0b101 => Ok((Operand::Memory(Memory::new(None, None, None, Some(Displacement::Disp32((self.read32()?, 2))))), Register::from(modrm.reg))),
                 _ => Ok((Operand::Memory(self.rm(modrm)?), Register::from(modrm.reg))),
             },
             0b01 => {
                 let mut memory = self.rm(modrm)?;
 
-                memory.displacement.replace(self.disp8((modrm.rm == 0).then(|| 3))?);
+                memory.displacement.replace(Displacement::Disp8((self.read8()?, (modrm.rm == 0).then(|| 3).unwrap_or(1))));
 
                 Ok((Operand::Memory(memory), Register::from(modrm.reg)))
             },
             0b10 => {
                 let mut memory = self.rm(modrm)?;
 
-                memory.displacement.replace(self.disp32(None)?);
+                memory.displacement.replace(Displacement::Disp32((self.read32()?, 1)));
 
                 Ok((Operand::Memory(memory), Register::from(modrm.reg)))
             },
@@ -129,11 +127,25 @@ impl Decoder {
                 match register {
                     Register::Rax => {
                         Ok(Instruction {
-                            code: Code
+                            code: Code::MovRM64Imm32,
+                            ops: vec![operand, Operand::Imm32(self.read32()?)],
+                            size: 16 - self.bytes.by_ref().count(),
+                            rex,
                         })
                     },
                     _ => unimplemented!(),
                 }
+            },
+            Some(0x0f) => match self.bytes.next() {
+                Some(0x05) => {
+                    Ok(Instruction {
+                        code: Code::Syscall,
+                        ops: Vec::new(),
+                        size: 16 - self.bytes.by_ref().count(),
+                        rex,
+                    })
+                },
+                Some(_) | None => Err(Error::InsufficientBytes),
             },
             Some(_) | None => Err(Error::InsufficientBytes),
         }

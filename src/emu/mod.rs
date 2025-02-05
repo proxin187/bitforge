@@ -4,7 +4,7 @@ mod memory;
 mod chunk;
 mod jit;
 
-use crate::{Instruction, Kind};
+use crate::instruction::{Instruction, Code};
 
 use chunk::InstructionChunk;
 use memory::Memory;
@@ -68,8 +68,8 @@ impl Executor {
     }
 
     fn emulate(&mut self, instruction: Instruction) {
-        match instruction.kind {
-            Kind::SYSCALL => {
+        match instruction.code {
+            Code::Syscall => {
                 match syscall::perform(self.ctx) {
                     Some(ctx) => {
                         self.ctx = ctx;
