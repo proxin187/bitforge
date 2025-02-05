@@ -1,4 +1,5 @@
 #![feature(naked_functions)]
+#![feature(iter_next_chunk)]
 
 mod instruction;
 mod config;

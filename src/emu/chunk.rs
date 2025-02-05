@@ -1,6 +1,6 @@
 use super::memory;
 
-use crate::{Instruction, Kind, parse};
+use crate::instruction::{decode, Instruction, Code};
 
 use log::info;
 
@@ -16,12 +16,12 @@ impl InstructionChunk {
         let mut bytes: Vec<u8> = Vec::new();
 
         loop {
-            let instruction = parse(&memory::read(*ip..*ip + 16)?);
+            let instruction = decode::decode(&memory::read(*ip..*ip + 16)?)?;
 
             info!("instruction: {:?}", instruction);
 
-            match instruction.kind {
-                Kind::SYSCALL {} => {
+            match instruction.code {
+                Code::Syscall => {
                     return Ok(InstructionChunk {
                         terminator: instruction,
                         bytes,
