@@ -2,10 +2,10 @@ pub mod decode;
 pub mod error;
 
 
-pub enum AccessKind {
-    Read,
-    Write,
-    Both,
+pub enum AccessKind<'a> {
+    Read(&'a Memory),
+    Write(&'a Memory),
+    Both(&'a Memory, &'a Memory),
 }
 
 #[derive(Debug)]
@@ -17,15 +17,22 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    // TODO: we will have to make this turn a function that reads or writtes memory into a function
-    // that does the same except with registers, for examples mov [rsp + 4], 2 would be turned into
-    // mov rax, 4, and then some instructions to write it into emulated memory
-    pub fn to_reg(&self) {
+    pub fn prefixes(&self) -> Vec<u8> {
+        self.rex.map(|rex| vec![rex]).unwrap_or_default()
     }
 
-    // TODO: this will say whether a instruction reads or writes any memory
+    pub fn compute_to_rax(&self) -> Vec<u8> {
+        match self.code {
+            Code::MovRM64Imm32 => [vec![0xc7, 0xc0], self.ops[1].get_imm32().expect("internal error").to_ne_bytes().to_vec()].concat(),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn memory_access(&self) -> Option<AccessKind> {
-        todo!();
+        match self.code {
+            Code::MovRM64Imm32 => self.ops[0].get_memory().map(|memory| AccessKind::Write(memory)),
+            Code::Syscall => None,
+        }
     }
 }
 
@@ -34,6 +41,22 @@ pub enum Operand {
     Imm32(u32),
     Memory(Memory),
     Register(Register),
+}
+
+impl Operand {
+    pub fn get_memory<'a>(&'a self) -> Option<&'a Memory> {
+        match self {
+            Operand::Memory(memory) => Some(memory),
+            _ => None,
+        }
+    }
+
+    pub fn get_imm32(&self) -> Option<u32> {
+        match self {
+            Operand::Imm32(imm32) => Some(*imm32),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
