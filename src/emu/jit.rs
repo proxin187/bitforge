@@ -1,8 +1,8 @@
-use super::Context;
+use crate::emu::{self, Context, CONTEXT};
 
+use std::ptr::{self, addr_of};
 use std::arch::asm;
 use std::mem;
-use std::ptr;
 
 use log::info;
 
@@ -35,8 +35,8 @@ impl Jit {
     }
 
     #[no_mangle]
-    pub fn exec(&mut self, bytes: &[u8], ctx: &Context) -> Context {
-        let output = Context::new();
+    pub fn exec(&mut self, bytes: &[u8]) {
+        let ctx = emu::context();
         let rsp: u64;
         let rbp: u64;
         let restore: Vec<u8>;
@@ -66,7 +66,7 @@ impl Jit {
 
             restore = vec![
                 // mov r9, {address of context}
-                vec![0x49, 0xb9], ((&output as *const Context) as u64).to_ne_bytes().to_vec(),
+                vec![0x49, 0xb9], (addr_of!(CONTEXT) as u64).to_ne_bytes().to_vec(),
 
                 vec![0x49, 0x89, 0x01],         // mov [r9], rax
                 vec![0x49, 0x89, 0x59, 0x08],   // mov [r9 + 8], rbx
@@ -89,8 +89,6 @@ impl Jit {
             ptr::copy(restore.as_ptr(), self.ptr.add(entry.len() + bytes.len()), restore.len());
 
             mem::transmute::<*mut u8, unsafe extern "C" fn()>(self.ptr)();
-
-            output
         }
     }
 }

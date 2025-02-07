@@ -1,4 +1,4 @@
-use super::{Instruction, Operand, Register, Memory, Displacement, Code};
+use super::{Instruction, Operand, Register, MemoryAddr, Displacement, Code};
 use super::error::Error;
 
 use std::array::IntoIter;
@@ -49,12 +49,24 @@ impl Decoder {
         }
     }
 
-    fn rm(&mut self, modrm: ModRM) -> Result<Memory, Error> {
+    #[inline]
+    fn read8(&mut self) -> Result<u8, Error> {
+        self.bytes.next().ok_or(Error::InsufficientBytes)
+    }
+
+    #[inline]
+    fn read32(&mut self) -> Result<u32, Error> {
+        let bytes = self.bytes.next_chunk().map_err(|_| Error::InsufficientBytes)?;
+
+        Ok(u32::from_ne_bytes(bytes))
+    }
+
+    fn rm(&mut self, modrm: ModRM) -> Result<MemoryAddr, Error> {
         match modrm.rm {
             0b100 => {
                 let sib = Sib::new(self.bytes.next().ok_or(Error::InsufficientBytes)?);
 
-                let mut memory = Memory::new(Some(Register::from(sib.base)), None, Some(sib.scale * 2), None);
+                let mut memory = MemoryAddr::new(Some(Register::from(sib.base)), None, Some(sib.scale * 2), None);
 
                 if sib.index != 0b100 {
                     memory.index.replace(Register::from(sib.index));
@@ -74,20 +86,8 @@ impl Decoder {
 
                 Ok(memory)
             },
-            _ => Ok(Memory::new(Some(Register::from(modrm.rm)), None, None, None)),
+            _ => Ok(MemoryAddr::new(Some(Register::from(modrm.rm)), None, None, None)),
         }
-    }
-
-    #[inline]
-    fn read8(&mut self) -> Result<u8, Error> {
-        self.bytes.next().ok_or(Error::InsufficientBytes)
-    }
-
-    #[inline]
-    fn read32(&mut self) -> Result<u32, Error> {
-        let bytes = self.bytes.next_chunk().map_err(|_| Error::InsufficientBytes)?;
-
-        Ok(u32::from_ne_bytes(bytes))
     }
 
     fn modrm(&mut self) -> Result<(Operand, Register), Error> {
@@ -95,7 +95,7 @@ impl Decoder {
 
         match modrm.mod_ {
             0b00 => match modrm.rm {
-                0b101 => Ok((Operand::Memory(Memory::new(None, None, None, Some(Displacement::Disp32((self.read32()?, 2))))), Register::from(modrm.reg))),
+                0b101 => Ok((Operand::Memory(MemoryAddr::new(None, None, None, Some(Displacement::Disp32((self.read32()?, 2))))), Register::from(modrm.reg))),
                 _ => Ok((Operand::Memory(self.rm(modrm)?), Register::from(modrm.reg))),
             },
             0b01 => {

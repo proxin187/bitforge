@@ -1,11 +1,13 @@
 pub mod decode;
 pub mod error;
 
+use crate::emu::{self, Context};
+
 
 pub enum AccessKind<'a> {
-    Read(&'a Memory),
-    Write(&'a Memory),
-    Both(&'a Memory, &'a Memory),
+    Read(&'a MemoryAddr),
+    Write(&'a MemoryAddr),
+    Both(&'a MemoryAddr, &'a MemoryAddr),
 }
 
 #[derive(Debug)]
@@ -39,12 +41,12 @@ impl Instruction {
 #[derive(Debug)]
 pub enum Operand {
     Imm32(u32),
-    Memory(Memory),
+    Memory(MemoryAddr),
     Register(Register),
 }
 
 impl Operand {
-    pub fn get_memory<'a>(&'a self) -> Option<&'a Memory> {
+    pub fn get_memory<'a>(&'a self) -> Option<&'a MemoryAddr> {
         match self {
             Operand::Memory(memory) => Some(memory),
             _ => None,
@@ -60,31 +62,54 @@ impl Operand {
 }
 
 #[derive(Debug)]
-pub struct Memory {
+pub struct MemoryAddr {
     pub base: Option<Register>,
     pub index: Option<Register>,
     pub scale: Option<u8>,
     pub displacement: Option<Displacement>,
 }
 
-impl Memory {
-    pub fn new(base: Option<Register>, index: Option<Register>, scale: Option<u8>, displacement: Option<Displacement>) -> Memory {
-        Memory {
+impl MemoryAddr {
+    pub fn new(base: Option<Register>, index: Option<Register>, scale: Option<u8>, displacement: Option<Displacement>) -> MemoryAddr {
+        MemoryAddr {
             base,
             index,
             scale,
             displacement,
         }
     }
+
+    fn index(&self, context: &Context) -> u64 {
+        self.index.map(|index| context.get_register(&index)).unwrap_or_default() * self.scale.map(|scale| (scale as u64 * 2).max(1)).unwrap_or(1)
+    }
+
+    fn base(&self, context: &Context) -> u64 {
+        self.base.map(|base| context.get_register(&base)).unwrap_or_default()
+    }
+
+    pub fn virtual_address(&self) -> u64 {
+        let context = emu::context();
+
+        self.displacement.map(|disp| Into::<u64>::into(disp)).unwrap_or_default() + self.base(&context) + self.index(&context)
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Displacement {
     Disp8((u8, u8)),
     Disp32((u32, u8)),
 }
 
-#[derive(Debug)]
+impl Into<u64> for Displacement {
+    fn into(self) -> u64 {
+        match self {
+            Displacement::Disp8((disp, multiplier)) => (disp as u64).pow(multiplier as u32),
+            Displacement::Disp32((disp, multiplier)) => (disp as u64).pow(multiplier as u32),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Register {
     Rax,
     Rcx,

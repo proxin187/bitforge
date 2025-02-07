@@ -1,4 +1,5 @@
-use crate::emu::Context;
+use crate::instruction::MemoryAddr;
+use crate::emu;
 
 use object::{File, Object, ObjectSegment};
 use log::info;
@@ -153,11 +154,14 @@ pub fn segments() -> Result<Vec<Segment>, Box<dyn std::error::Error>> {
 }
 
 #[no_mangle]
-pub fn read_raw(address: usize) {
+pub unsafe fn read_raw(ptr: *const MemoryAddr) {
 }
 
 #[no_mangle]
-pub fn write_raw(address: usize, value: u64) {
+pub unsafe fn write_raw(addr: *const MemoryAddr, value: u64) {
+    let addr = (*addr).virtual_address();
+
+    let _ = write(addr as usize, value.to_ne_bytes().as_slice());
 }
 
 #[cfg(test)]

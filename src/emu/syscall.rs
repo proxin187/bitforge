@@ -1,14 +1,16 @@
-use super::Context;
+use crate::emu;
 
 use log::info;
 
 
-pub fn perform(ctx: Context) -> Option<Context> {
+pub fn perform() -> bool {
+    let ctx = emu::context();
+
     match ctx.rax {
         60 => {
             info!("exited with status code: {}", ctx.rdi);
 
-            None
+            true
         },
         _ => unimplemented!(),
     }
