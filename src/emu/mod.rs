@@ -17,7 +17,6 @@ use std::fs;
 
 pub static mut CONTEXT: Context = Context::new();
 
-
 pub fn context() -> Context {
     unsafe { CONTEXT }
 }
@@ -108,6 +107,11 @@ impl Executor {
             }
 
             self.emulate(chunk.terminator);
+        }
+
+        unsafe {
+            memory::_write_raw64(0 as *const _, 0);
+            memory::_read_raw64(0 as *const _);
         }
 
         Ok(())

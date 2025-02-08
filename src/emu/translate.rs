@@ -26,10 +26,14 @@ impl Translate {
                     // something like a static variable to store it
 
                     self.out.extend([
-                        instruction.prefixes(), instruction.compute_to_rax(),
+                        // TODO: this will have to compute to rdi instead
+                        instruction.prefixes(), instruction.compute_to_rdi(),
 
                         // mov rcx, {address of write}
-                        vec![0x48, 0xb9], ((memory::write_raw as *const ()) as usize).to_ne_bytes().to_vec(),
+                        vec![0x48, 0xb9], ((memory::_write_raw64 as *const ()) as usize).to_ne_bytes().to_vec(),
+
+                        // mov rsi, {address of memory address}
+                        vec![0x48, 0xbe], ctx.rsi.to_ne_bytes().to_vec(),
 
                         // call rcx
                         vec![0xff, 0xd1],

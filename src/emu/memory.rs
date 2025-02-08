@@ -154,11 +154,16 @@ pub fn segments() -> Result<Vec<Segment>, Box<dyn std::error::Error>> {
 }
 
 #[no_mangle]
-pub unsafe fn read_raw(ptr: *const MemoryAddr) {
+pub unsafe fn _read_raw64(addr: *const MemoryAddr) -> u64 {
+    let addr = (*addr).virtual_address();
+
+    let bytes = read(Range { start: addr as usize, end: addr as usize + 8 }).expect("failed to read raw64");
+
+    u64::from_ne_bytes(bytes.try_into().expect("interal error"))
 }
 
 #[no_mangle]
-pub unsafe fn write_raw(addr: *const MemoryAddr, value: u64) {
+pub unsafe fn _write_raw64(addr: *const MemoryAddr, value: u64) {
     let addr = (*addr).virtual_address();
 
     let _ = write(addr as usize, value.to_ne_bytes().as_slice());
