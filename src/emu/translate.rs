@@ -1,4 +1,4 @@
-use crate::instruction::{Instruction, AccessKind};
+use crate::instruction::{Instruction, MemoryAddr, AccessKind};
 use crate::emu::memory;
 
 
@@ -33,7 +33,7 @@ impl Translate {
                         vec![0x48, 0xb9], ((memory::_write_raw64 as *const ()) as usize).to_ne_bytes().to_vec(),
 
                         // mov rsi, {address of memory address}
-                        vec![0x48, 0xbe], ctx.rsi.to_ne_bytes().to_vec(),
+                        vec![0x48, 0xbe], ((mem as *const MemoryAddr) as usize).to_ne_bytes().to_vec(),
 
                         // call rcx
                         vec![0xff, 0xd1],

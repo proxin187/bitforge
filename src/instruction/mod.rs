@@ -23,9 +23,9 @@ impl Instruction {
         self.rex.map(|rex| vec![rex]).unwrap_or_default()
     }
 
-    pub fn compute_to_rax(&self) -> Vec<u8> {
+    pub fn compute_to_rdi(&self) -> Vec<u8> {
         match self.code {
-            Code::MovRM64Imm32 => [vec![0xc7, 0xc0], self.ops[1].get_imm32().expect("internal error").to_ne_bytes().to_vec()].concat(),
+            Code::MovRM64Imm32 => [vec![0x48, 0xbf], self.ops[1].get_imm32().expect("internal error").to_ne_bytes().to_vec()].concat(),
             _ => unreachable!(),
         }
     }
