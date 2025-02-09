@@ -154,7 +154,7 @@ pub fn segments() -> Result<Vec<Segment>, Box<dyn std::error::Error>> {
 }
 
 #[no_mangle]
-pub unsafe fn _read_raw64(addr: *const MemoryAddr) -> u64 {
+pub unsafe extern "sysv64" fn _read_raw64(addr: *const MemoryAddr) -> u64 {
     let addr = (*addr).virtual_address();
 
     let bytes = read(Range { start: addr as usize, end: addr as usize + 8 }).expect("failed to read raw64");
@@ -163,10 +163,12 @@ pub unsafe fn _read_raw64(addr: *const MemoryAddr) -> u64 {
 }
 
 #[no_mangle]
-pub unsafe fn _write_raw64(addr: *const MemoryAddr, value: u64) {
+pub unsafe extern "sysv64" fn _write_raw64() {
+    /*
     let addr = (*addr).virtual_address();
 
     let _ = write(addr as usize, value.to_ne_bytes().as_slice());
+    */
 }
 
 #[cfg(test)]

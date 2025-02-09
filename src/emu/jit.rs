@@ -41,10 +41,6 @@ impl Jit {
         let rbp: u64;
         let restore: Vec<u8>;
 
-        // TODO: we need to have write protection on the memory regions that are currently being
-        // executed, it would then trigger a re-translation everytime it overwrittes currently
-        // executing memory
-
         unsafe {
             let entry: Vec<u8> = vec![
                 vec![0x48, 0xb8], ctx.rax.to_ne_bytes().to_vec(),
