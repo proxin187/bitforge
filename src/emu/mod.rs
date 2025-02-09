@@ -7,12 +7,11 @@ mod jit;
 use crate::instruction::{Instruction, Code, Register};
 
 use chunk::InstructionChunk;
+use translate::Translate;
 use jit::Jit;
 
 use object::{Object, File};
-use log::{info, warn};
 
-use std::sync::{Mutex, LazyLock};
 use std::fs;
 
 pub static mut CONTEXT: Context = Context::new();
@@ -83,14 +82,12 @@ impl Executor {
         })
     }
 
-    fn emulate(&mut self, instruction: Instruction) -> Result<(), Box<dyn std::error::Error>> {
+    fn emulate(&mut self, instruction: Instruction) {
         match instruction.code {
             Code::Syscall => {
                 if syscall::perform() {
                     self.should_close = true;
                 }
-
-                Ok(())
             },
             _ => unreachable!(),
         }
@@ -98,20 +95,19 @@ impl Executor {
 
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         while !self.should_close {
-            let chunk = InstructionChunk::new(&mut self.ip)?;
+            let instructions = InstructionChunk::new(&mut self.ip)?;
+            let mut translate = Translate::new();
 
-            break;
-
-            if !chunk.bytes.is_empty() {
-                self.jit.exec(&chunk.bytes);
+            for part in instructions.chunk.iter() {
+                translate.process(&part);
             }
 
-            self.emulate(chunk.terminator);
-        }
+            // TODO: find out why it segfaults
+            if !translate.out.is_empty() {
+                self.jit.exec(&translate.out);
+            }
 
-        unsafe {
-            memory::_write_raw64(0 as *const _, 0);
-            memory::_read_raw64(0 as *const _);
+            self.emulate(instructions.terminator);
         }
 
         Ok(())

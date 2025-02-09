@@ -6,14 +6,29 @@ use log::info;
 
 
 #[derive(Debug)]
+pub struct Part {
+    pub instruction: Instruction,
+    pub bytes: Vec<u8>,
+}
+
+impl Part {
+    pub fn new(instruction: Instruction, bytes: Vec<u8>) -> Part {
+        Part {
+            instruction,
+            bytes,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct InstructionChunk {
     pub terminator: Instruction,
-    pub bytes: Vec<u8>,
+    pub chunk: Vec<Part>,
 }
 
 impl InstructionChunk {
     pub fn new(ip: &mut usize) -> Result<InstructionChunk, Box<dyn std::error::Error>> {
-        let mut bytes: Vec<u8> = Vec::new();
+        let mut chunk: Vec<Part> = Vec::new();
 
         loop {
             let instruction = decode::decode(&memory::read(*ip..*ip + 16)?)?;
@@ -24,13 +39,15 @@ impl InstructionChunk {
                 Code::Syscall => {
                     return Ok(InstructionChunk {
                         terminator: instruction,
-                        bytes,
+                        chunk,
                     });
                 },
                 _ => {
-                    bytes.extend(memory::read(*ip..*ip + instruction.size as usize)?);
+                    let bytes = memory::read(*ip..*ip + instruction.size as usize)?;
 
                     *ip += instruction.size as usize;
+
+                    chunk.push(Part::new(instruction, bytes));
                 },
             }
         }

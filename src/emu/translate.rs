@@ -1,4 +1,5 @@
 use crate::instruction::{Instruction, MemoryAddr, AccessKind};
+use crate::emu::chunk::Part;
 use crate::emu::memory;
 
 
@@ -13,8 +14,8 @@ impl Translate {
         }
     }
 
-    pub fn process(&mut self, instruction: Instruction, bytes: &[u8]) {
-        match instruction.memory_access() {
+    pub fn process(&mut self, part: &Part) {
+        match part.instruction.memory_access() {
             Some(access) => match access {
                 AccessKind::Read(mem) => {
                 },
@@ -27,7 +28,7 @@ impl Translate {
 
                     self.out.extend([
                         // TODO: this will have to compute to rdi instead
-                        instruction.prefixes(), instruction.compute_to_rdi(),
+                        part.instruction.prefixes(), part.instruction.compute_to_rdi(),
 
                         // mov rcx, {address of write}
                         vec![0x48, 0xb9], ((memory::_write_raw64 as *const ()) as usize).to_ne_bytes().to_vec(),
@@ -43,7 +44,7 @@ impl Translate {
                 },
             },
             None => {
-                self.out.extend(bytes);
+                self.out.extend(&part.bytes);
             },
         }
     }
