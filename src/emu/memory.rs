@@ -163,12 +163,10 @@ pub unsafe extern "sysv64" fn _read_raw64(addr: *const MemoryAddr) -> u64 {
 }
 
 #[no_mangle]
-pub unsafe extern "sysv64" fn _write_raw64() {
-    /*
+pub unsafe extern "sysv64" fn _write_raw64(value: u64, addr: *const MemoryAddr) {
     let addr = (*addr).virtual_address();
 
     let _ = write(addr as usize, value.to_ne_bytes().as_slice());
-    */
 }
 
 #[cfg(test)]

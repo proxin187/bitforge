@@ -1,19 +1,42 @@
-use crate::instruction::{Instruction, MemoryAddr, AccessKind};
+use crate::instruction::{MemoryAddr, AccessKind};
 use crate::emu::chunk::Part;
-use crate::emu::memory;
+use crate::emu::{CONTEXT, memory};
 
 use log::info;
 
+use std::ptr::addr_of;
+
+
+#[derive(Debug, Clone)]
+pub enum Block {
+    Byte(u8),
+    StackPointer,
+    FramePointer,
+}
 
 pub struct Translate {
-    pub out: Vec<u8>,
+    blocks: Vec<Block>,
 }
 
 impl Translate {
     pub fn new() -> Translate {
         Translate {
-            out: Vec::new(),
+            blocks: Vec::new(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
+    pub fn to_bytes(self, rsp: u64, rbp: u64) -> Vec<u8> {
+        self.blocks.iter()
+            .flat_map(|block| match block {
+                Block::Byte(byte) => vec![*byte],
+                Block::StackPointer => rsp.to_ne_bytes().to_vec(),
+                Block::FramePointer => rbp.to_ne_bytes().to_vec(),
+            })
+            .collect::<Vec<u8>>()
     }
 
     #[no_mangle]
@@ -23,31 +46,93 @@ impl Translate {
                 AccessKind::Read(mem) => {
                 },
                 AccessKind::Write(mem) => {
-                    // TODO: here we will have to push all the registers to the stack in addition
-                    // to popping them after the write is done
-                    //
-                    // we will actually need to do this without the stack, therefore we might use
-                    // something like a static variable to store it
-
                     info!("dec: {}, bytes: {:?}", ((memory::_write_raw64 as *const ()) as usize), ((memory::_write_raw64 as *const ()) as usize).to_ne_bytes().to_vec());
 
                     unsafe {
-                        self.out.extend([
-                            // part.instruction.compute_to_rdi(),
+                        let write_addr = ((memory::_write_raw64 as *const ()) as usize).to_ne_bytes()
+                            .map(|byte| Block::Byte(byte))
+                            .to_vec();
+
+                        let ctx_addr = (addr_of!(CONTEXT) as u64).to_ne_bytes()
+                            .map(|byte| Block::Byte(byte))
+                            .to_vec();
+
+                        let mem_addr = ((mem as *const MemoryAddr) as usize).to_ne_bytes()
+                            .map(|byte| Block::Byte(byte))
+                            .to_vec();
+
+                        self.blocks.extend([
+                            // mov r9, {address of context}
+                            vec![Block::Byte(0x49), Block::Byte(0xb9)], ctx_addr.clone(),
+
+                            // mov [r9], rax
+                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x01)],
+
+                            // mov [r9 + 8], rbx
+                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x59), Block::Byte(0x08)],
+
+                            // mov [r9 + 16], rcx
+                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x49), Block::Byte(0x10)],
+
+                            // mov [r9 + 24], rdx
+                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x51), Block::Byte(0x18)],
+
+                            // mov [r9 + 32], rbp
+                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x69), Block::Byte(0x20)],
+
+                            // mov [r9 + 40], rsp
+                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x61), Block::Byte(0x28)],
+
+                            // mov [r9 + 48], rsi
+                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x71), Block::Byte(0x30)],
+
+                            // mov [r9 + 56], rdi
+                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x79), Block::Byte(0x38)],
+
+                            // mov rsp, {stack pointer}
+                            vec![Block::Byte(0x48), Block::Byte(0xbc), Block::StackPointer],
+
+                            // mov rbp, {frame pointer}
+                            vec![Block::Byte(0x48), Block::Byte(0xbd), Block::FramePointer],
+
+                            // mov rdi, {computed value}
+                            part.instruction.compute_to_rdi().iter().map(|byte| Block::Byte(*byte)).collect(),
 
                             // mov rsi, {address of memory address}
-                            // vec![0x48, 0xbe], ((mem as *const MemoryAddr) as usize).to_ne_bytes().to_vec(),
+                            vec![Block::Byte(0x48), Block::Byte(0xbe)], mem_addr,
 
                             // mov rax, {address of write}
-                            // vec![0x48, 0xb8], ((memory::_write_raw64 as *const ()) as usize).to_vec(),
-                            vec![0x48, 0xb8], std::mem::transmute::<unsafe extern "sysv64" fn(), u64>(memory::_write_raw64 as unsafe extern "sysv64" fn()).to_ne_bytes().to_vec(),
-
-                            // TODO: this doesnt work because the stack is invalid lol
-                            // to fix this we will have to load in a valid stack pointer (rsp) and stack
-                            // frame (rbp) before calling
+                            vec![Block::Byte(0x48), Block::Byte(0xb8)], write_addr,
 
                             // call rax
-                            vec![0xff, 0xd0],
+                            vec![Block::Byte(0xff), Block::Byte(0xd0)],
+
+                            // mov r9, {address of context}
+                            vec![Block::Byte(0x49), Block::Byte(0xb9)], ctx_addr,
+
+                            // mov rax, [r9]
+                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x01)],
+
+                            // mov rbx, [r9 + 8]
+                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x59), Block::Byte(0x08)],
+
+                            // mov rcx, [r9 + 16]
+                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x49), Block::Byte(0x10)],
+
+                            // mov rdx, [r9 + 24]
+                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x51), Block::Byte(0x18)],
+
+                            // mov rbp, [r9 + 32]
+                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x69), Block::Byte(0x20)],
+
+                            // mov rsp, [r9 + 40]
+                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x61), Block::Byte(0x28)],
+
+                            // mov rsi, [r9 + 48]
+                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x71), Block::Byte(0x30)],
+
+                            // mov rdi, [r9 + 56]
+                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x79), Block::Byte(0x38)],
                         ].concat());
                     }
                 },
@@ -55,7 +140,10 @@ impl Translate {
                 },
             },
             None => {
-                self.out.extend(&part.bytes);
+                let blocks = part.bytes.iter()
+                    .map(|byte| Block::Byte(*byte));
+
+                self.blocks.extend(blocks);
             },
         }
     }

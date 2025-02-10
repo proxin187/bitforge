@@ -1,4 +1,4 @@
-use crate::emu::{self, Context, CONTEXT};
+use crate::emu::{self, Context, CONTEXT, Translate};
 
 use std::ptr::{self, addr_of};
 use std::arch::asm;
@@ -35,7 +35,7 @@ impl Jit {
     }
 
     #[no_mangle]
-    pub fn exec(&mut self, bytes: &[u8]) {
+    pub fn exec(&mut self, translate: Translate) {
         let ctx = emu::context();
         let rsp: u64;
         let rbp: u64;
@@ -59,6 +59,8 @@ impl Jit {
                 rsp = out(reg) rsp,
                 rbp = out(reg) rbp,
             );
+
+            let bytes = translate.to_bytes(rsp - 16, rbp);
 
             restore = vec![
                 // mov r9, {address of context}

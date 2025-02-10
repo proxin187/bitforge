@@ -25,7 +25,11 @@ impl Instruction {
 
     pub fn compute_to_rdi(&self) -> Vec<u8> {
         match self.code {
-            Code::MovRM64Imm32 => [vec![0x48, 0xbf], self.ops[1].get_imm32().expect("internal error").to_ne_bytes().to_vec()].concat(),
+            Code::MovRM64Imm32 => {
+                let imm32 = self.ops[1].get_imm32().expect("internal error") as u64;
+
+                [vec![0x48, 0xbf], imm32.to_ne_bytes().to_vec()].concat()
+            },
             _ => unreachable!(),
         }
     }

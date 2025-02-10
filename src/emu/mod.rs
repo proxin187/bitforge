@@ -103,8 +103,8 @@ impl Executor {
             }
 
             // TODO: find out why it segfaults
-            if !translate.out.is_empty() {
-                self.jit.exec(&translate.out);
+            if !translate.is_empty() {
+                self.jit.exec(translate);
             }
 
             self.emulate(instructions.terminator);
