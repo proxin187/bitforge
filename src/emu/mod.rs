@@ -1,6 +1,6 @@
+pub mod memory;
 mod translate;
 mod syscall;
-mod memory;
 mod chunk;
 mod jit;
 

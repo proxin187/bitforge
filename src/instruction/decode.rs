@@ -136,6 +136,16 @@ impl Decoder {
                     _ => unimplemented!(),
                 }
             },
+            Some(0x8b) => {
+                let (operand, register) = self.modrm()?;
+
+                Ok(Instruction  {
+                    code: Code::MovR64RM64,
+                    ops: vec![Operand::Register(register), operand],
+                    size: 16 - self.bytes.by_ref().count(),
+                    rex,
+                })
+            },
             Some(0x0f) => match self.bytes.next() {
                 Some(0x05) => {
                     Ok(Instruction {
@@ -147,7 +157,7 @@ impl Decoder {
                 },
                 Some(_) | None => Err(Error::InsufficientBytes),
             },
-            Some(_) | None => Err(Error::InsufficientBytes),
+            Some(_) | None => Err(Error::InvalidEncoding),
         }
     }
 }

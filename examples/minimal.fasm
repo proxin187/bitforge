@@ -5,10 +5,9 @@ segment readable executable
 entry start
 
 start:
-    mov rax, 10
     mov qword [rsp], 24
+    mov rdi, [rsp]
 
-    mov rdi, 9
     mov rax, 60
     syscall
 

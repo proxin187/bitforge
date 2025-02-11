@@ -2,10 +2,22 @@ use crate::instruction::{MemoryAddr, AccessKind};
 use crate::emu::chunk::Part;
 use crate::emu::{CONTEXT, memory};
 
-use log::info;
-
 use std::ptr::addr_of;
 
+
+enum CtxOp {
+    Load,
+    Store,
+}
+
+impl CtxOp {
+    pub fn value(&self) -> u8 {
+        match self {
+            CtxOp::Load => 0x8b,
+            CtxOp::Store => 0x89,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum Block {
@@ -39,105 +51,66 @@ impl Translate {
             .collect::<Vec<u8>>()
     }
 
+    fn encode_addr(&self, addr: usize) -> Vec<Block> {
+        addr.to_ne_bytes()
+            .map(|byte| Block::Byte(byte))
+            .to_vec()
+    }
+
+    fn ctx(&mut self, op: CtxOp, ctx_addr: Vec<Block>) {
+        self.blocks.extend([
+            vec![Block::Byte(0x49), Block::Byte(0xb9)], ctx_addr,
+            vec![Block::Byte(0x49), Block::Byte(op.value()), Block::Byte(0x01)],
+            vec![Block::Byte(0x49), Block::Byte(op.value()), Block::Byte(0x59), Block::Byte(0x08)],
+            vec![Block::Byte(0x49), Block::Byte(op.value()), Block::Byte(0x49), Block::Byte(0x10)],
+            vec![Block::Byte(0x49), Block::Byte(op.value()), Block::Byte(0x51), Block::Byte(0x18)],
+            vec![Block::Byte(0x49), Block::Byte(op.value()), Block::Byte(0x69), Block::Byte(0x20)],
+            vec![Block::Byte(0x49), Block::Byte(op.value()), Block::Byte(0x61), Block::Byte(0x28)],
+            vec![Block::Byte(0x49), Block::Byte(op.value()), Block::Byte(0x71), Block::Byte(0x30)],
+            vec![Block::Byte(0x49), Block::Byte(op.value()), Block::Byte(0x79), Block::Byte(0x38)],
+        ].concat());
+    }
+
     #[no_mangle]
     pub fn process(&mut self, part: &Part) {
+        let ctx_addr = (unsafe { addr_of!(CONTEXT) as usize }).to_ne_bytes()
+            .map(|byte| Block::Byte(byte))
+            .to_vec();
+
         match part.instruction.memory_access() {
-            Some(access) => match access {
-                AccessKind::Read(mem) => {
-                },
-                AccessKind::Write(mem) => {
-                    info!("dec: {}, bytes: {:?}", ((memory::_write_raw64 as *const ()) as usize), ((memory::_write_raw64 as *const ()) as usize).to_ne_bytes().to_vec());
+            Some(access) => {
+                self.ctx(CtxOp::Store, ctx_addr.clone());
 
-                    unsafe {
-                        let write_addr = ((memory::_write_raw64 as *const ()) as usize).to_ne_bytes()
-                            .map(|byte| Block::Byte(byte))
-                            .to_vec();
+                self.blocks.extend([
+                    // mov rsp, {stack pointer}
+                    vec![Block::Byte(0x48), Block::Byte(0xbc), Block::StackPointer],
 
-                        let ctx_addr = (addr_of!(CONTEXT) as u64).to_ne_bytes()
-                            .map(|byte| Block::Byte(byte))
-                            .to_vec();
+                    // mov rbp, {frame pointer}
+                    vec![Block::Byte(0x48), Block::Byte(0xbd), Block::FramePointer],
 
-                        let mem_addr = ((mem as *const MemoryAddr) as usize).to_ne_bytes()
-                            .map(|byte| Block::Byte(byte))
-                            .to_vec();
+                    // mov rdi, {computed value}
+                    part.instruction.compute_to_rdi().iter().map(|byte| Block::Byte(*byte)).collect(),
 
-                        self.blocks.extend([
-                            // mov r9, {address of context}
-                            vec![Block::Byte(0x49), Block::Byte(0xb9)], ctx_addr.clone(),
+                    // mov rsi, {address of memory address}
+                    vec![Block::Byte(0x48), Block::Byte(0xbe)], self.encode_addr((access.addr as *const MemoryAddr) as usize),
 
-                            // mov [r9], rax
-                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x01)],
+                    // mov rax, {address of write}
+                    vec![Block::Byte(0x48), Block::Byte(0xb8)], self.encode_addr(access.kind.handler() as usize),
 
-                            // mov [r9 + 8], rbx
-                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x59), Block::Byte(0x08)],
+                    // call rax
+                    vec![Block::Byte(0xff), Block::Byte(0xd0)],
+                ].concat());
 
-                            // mov [r9 + 16], rcx
-                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x49), Block::Byte(0x10)],
+                match access.kind {
+                    AccessKind::Read => {
+                    },
+                    AccessKind::Write => {
+                    },
+                    AccessKind::Both => {
+                    },
+                }
 
-                            // mov [r9 + 24], rdx
-                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x51), Block::Byte(0x18)],
-
-                            // mov [r9 + 32], rbp
-                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x69), Block::Byte(0x20)],
-
-                            // mov [r9 + 40], rsp
-                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x61), Block::Byte(0x28)],
-
-                            // mov [r9 + 48], rsi
-                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x71), Block::Byte(0x30)],
-
-                            // mov [r9 + 56], rdi
-                            vec![Block::Byte(0x49), Block::Byte(0x89), Block::Byte(0x79), Block::Byte(0x38)],
-
-                            // mov rsp, {stack pointer}
-                            vec![Block::Byte(0x48), Block::Byte(0xbc), Block::StackPointer],
-
-                            // mov rbp, {frame pointer}
-                            vec![Block::Byte(0x48), Block::Byte(0xbd), Block::FramePointer],
-
-                            // mov rdi, {computed value}
-                            part.instruction.compute_to_rdi().iter().map(|byte| Block::Byte(*byte)).collect(),
-
-                            // mov rsi, {address of memory address}
-                            vec![Block::Byte(0x48), Block::Byte(0xbe)], mem_addr,
-
-                            // mov rax, {address of write}
-                            vec![Block::Byte(0x48), Block::Byte(0xb8)], write_addr,
-
-                            // call rax
-                            vec![Block::Byte(0xff), Block::Byte(0xd0)],
-
-                            // mov r9, {address of context}
-                            vec![Block::Byte(0x49), Block::Byte(0xb9)], ctx_addr,
-
-                            // mov rax, [r9]
-                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x01)],
-
-                            // mov rbx, [r9 + 8]
-                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x59), Block::Byte(0x08)],
-
-                            // mov rcx, [r9 + 16]
-                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x49), Block::Byte(0x10)],
-
-                            // mov rdx, [r9 + 24]
-                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x51), Block::Byte(0x18)],
-
-                            // mov rbp, [r9 + 32]
-                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x69), Block::Byte(0x20)],
-
-                            // mov rsp, [r9 + 40]
-                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x61), Block::Byte(0x28)],
-
-                            // mov rsi, [r9 + 48]
-                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x71), Block::Byte(0x30)],
-
-                            // mov rdi, [r9 + 56]
-                            vec![Block::Byte(0x49), Block::Byte(0x8b), Block::Byte(0x79), Block::Byte(0x38)],
-                        ].concat());
-                    }
-                },
-                AccessKind::Both(mem1, mem2) => {
-                },
+                self.ctx(CtxOp::Load, ctx_addr.clone());
             },
             None => {
                 let blocks = part.bytes.iter()

@@ -1,13 +1,28 @@
 pub mod decode;
 pub mod error;
 
-use crate::emu::{self, Context};
+use crate::emu::{self, Context, memory};
 
 
-pub enum AccessKind<'a> {
-    Read(&'a MemoryAddr),
-    Write(&'a MemoryAddr),
-    Both(&'a MemoryAddr, &'a MemoryAddr),
+pub enum AccessKind {
+    Read,
+    Write,
+    Both,
+}
+
+impl AccessKind {
+    pub fn handler(&self) -> *const () {
+        match self {
+            AccessKind::Read => memory::_read_raw64 as *const (),
+            AccessKind::Write => memory::_write_raw64 as *const (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+pub struct Access<'a> {
+    pub addr: &'a MemoryAddr,
+    pub kind: AccessKind,
 }
 
 #[derive(Debug)]
@@ -34,9 +49,10 @@ impl Instruction {
         }
     }
 
-    pub fn memory_access(&self) -> Option<AccessKind> {
+    pub fn memory_access(&self) -> Option<Access> {
         match self.code {
-            Code::MovRM64Imm32 => self.ops[0].get_memory().map(|memory| AccessKind::Write(memory)),
+            Code::MovRM64Imm32 => self.ops[0].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Write }),
+            Code::MovR64RM64 => self.ops[1].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Read }),
             Code::Syscall => None,
         }
     }
@@ -144,6 +160,7 @@ impl From<u8> for Register {
 #[derive(Debug)]
 pub enum Code {
     MovRM64Imm32,
+    MovR64RM64,
     Syscall,
 }
 
