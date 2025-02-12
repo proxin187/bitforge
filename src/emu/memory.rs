@@ -1,5 +1,5 @@
-use crate::instruction::MemoryAddr;
-use crate::emu;
+use crate::instruction::{Register, MemoryAddr};
+use crate::emu::CONTEXT;
 
 use object::{File, Object, ObjectSegment};
 use log::info;
@@ -154,17 +154,31 @@ pub fn segments() -> Result<Vec<Segment>, Box<dyn std::error::Error>> {
 }
 
 #[no_mangle]
-pub unsafe extern "sysv64" fn _read_raw64(addr: *const MemoryAddr) -> u64 {
+pub unsafe extern "sysv64" fn _read_raw64(register: Register, addr: *const MemoryAddr) {
     let addr = (*addr).virtual_address();
 
-    let bytes = read(Range { start: addr as usize, end: addr as usize + 8 }).expect("failed to read raw64");
+    info!("register: {:?}, addr: {:#x?}", register, addr);
 
-    u64::from_ne_bytes(bytes.try_into().expect("interal error"))
+    let bytes = read(Range { start: addr as usize, end: addr as usize + 8 }).expect("failed to read raw64");
+    let value = u64::from_ne_bytes(bytes.try_into().expect("interal error"));
+
+    match register {
+        Register::Rax => unsafe { CONTEXT.rax = value },
+        Register::Rcx => unsafe { CONTEXT.rcx = value },
+        Register::Rdx => unsafe { CONTEXT.rdx = value },
+        Register::Rbx => unsafe { CONTEXT.rbx = value },
+        Register::Rsp => unsafe { CONTEXT.rsp = value },
+        Register::Rbp => unsafe { CONTEXT.rbp = value },
+        Register::Rsi => unsafe { CONTEXT.rsi = value },
+        Register::Rdi => unsafe { CONTEXT.rdi = value },
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "sysv64" fn _write_raw64(value: u64, addr: *const MemoryAddr) {
     let addr = (*addr).virtual_address();
+
+    info!("addr: {:#x?}", addr);
 
     let _ = write(addr as usize, value.to_ne_bytes().as_slice());
 }

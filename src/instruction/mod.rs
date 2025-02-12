@@ -3,6 +3,8 @@ pub mod error;
 
 use crate::emu::{self, Context, memory};
 
+use std::mem;
+
 
 pub enum AccessKind {
     Read,
@@ -34,10 +36,6 @@ pub struct Instruction {
 }
 
 impl Instruction {
-    pub fn prefixes(&self) -> Vec<u8> {
-        self.rex.map(|rex| vec![rex]).unwrap_or_default()
-    }
-
     pub fn compute_to_rdi(&self) -> Vec<u8> {
         match self.code {
             Code::MovRM64Imm32 => {
@@ -45,7 +43,12 @@ impl Instruction {
 
                 [vec![0x48, 0xbf], imm32.to_ne_bytes().to_vec()].concat()
             },
-            _ => unreachable!(),
+            Code::MovR64RM64 => {
+                let register: u8 = unsafe { mem::transmute(self.ops[0].get_register().expect("internal error")) };
+
+                [vec![0x48, 0xbf], (register as u64).to_ne_bytes().to_vec()].concat()
+            },
+            _ => Vec::new(),
         }
     }
 
@@ -76,6 +79,13 @@ impl Operand {
     pub fn get_imm32(&self) -> Option<u32> {
         match self {
             Operand::Imm32(imm32) => Some(*imm32),
+            _ => None,
+        }
+    }
+
+    pub fn get_register(&self) -> Option<Register> {
+        match self {
+            Operand::Register(register) => Some(*register),
             _ => None,
         }
     }
@@ -130,6 +140,7 @@ impl Into<u64> for Displacement {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[repr(u8)]
 pub enum Register {
     Rax,
     Rcx,

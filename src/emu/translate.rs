@@ -71,7 +71,6 @@ impl Translate {
         ].concat());
     }
 
-    #[no_mangle]
     pub fn process(&mut self, part: &Part) {
         let ctx_addr = (unsafe { addr_of!(CONTEXT) as usize }).to_ne_bytes()
             .map(|byte| Block::Byte(byte))
@@ -100,15 +99,6 @@ impl Translate {
                     // call rax
                     vec![Block::Byte(0xff), Block::Byte(0xd0)],
                 ].concat());
-
-                match access.kind {
-                    AccessKind::Read => {
-                    },
-                    AccessKind::Write => {
-                    },
-                    AccessKind::Both => {
-                    },
-                }
 
                 self.ctx(CtxOp::Load, ctx_addr.clone());
             },
