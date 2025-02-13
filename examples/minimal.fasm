@@ -5,7 +5,8 @@ segment readable executable
 entry start
 
 start:
-    mov qword [rsp], 24
+    mov qword [rsp], 34
+    add qword [rsp], 35
     mov rdi, [rsp]
 
     mov rax, 60

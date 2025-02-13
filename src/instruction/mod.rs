@@ -48,6 +48,9 @@ impl Instruction {
 
                 [vec![0x48, 0xbf], (register as u64).to_ne_bytes().to_vec()].concat()
             },
+            Code::AddRM64Imm8 => {
+                todo!("here we will have to make a mechanism where we can have an instruction to perform before the write")
+            },
             _ => Vec::new(),
         }
     }
@@ -56,6 +59,7 @@ impl Instruction {
         match self.code {
             Code::MovRM64Imm32 => self.ops[0].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Write }),
             Code::MovR64RM64 => self.ops[1].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Read }),
+            Code::AddRM64Imm8 => self.ops[0].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Write }),
             Code::Syscall => None,
         }
     }
@@ -64,6 +68,7 @@ impl Instruction {
 #[derive(Debug)]
 pub enum Operand {
     Imm32(u32),
+    Imm8(u8),
     Memory(MemoryAddr),
     Register(Register),
 }
@@ -172,6 +177,7 @@ impl From<u8> for Register {
 pub enum Code {
     MovRM64Imm32,
     MovR64RM64,
+    AddRM64Imm8,
     Syscall,
 }
 

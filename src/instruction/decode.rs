@@ -146,6 +146,21 @@ impl Decoder {
                     rex,
                 })
             },
+            Some(0x83) => {
+                let (operand, register) = self.modrm()?;
+
+                match register {
+                    Register::Rax => {
+                        Ok(Instruction {
+                            code: Code::AddRM64Imm8,
+                            ops: vec![operand, Operand::Imm8(self.read8()?)],
+                            size: 16 - self.bytes.by_ref().count(),
+                            rex,
+                        })
+                    },
+                    _ => unimplemented!(),
+                }
+            },
             Some(0x0f) => match self.bytes.next() {
                 Some(0x05) => {
                     Ok(Instruction {
