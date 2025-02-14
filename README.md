@@ -1,14 +1,16 @@
 # Bitforge
 
-bitforge is a low level sandbox for unix-like systems.
+bitforge is a low level emulator for unix-like systems.
 
 ## Key Features
-* Full usermode emulation.
-* Intercepting syscalls on the instruction layer.
+* Usermode emulation
+* Binary Translation
 
-## Goals
-- [ ] Configuration through both toml and command line arguments
-- [ ] Proxy capalities by overwriting network syscalls (similar to [torsocks](https://linux.die.net/man/8/torsocks) except on the instruction layer)
+## Usage
+To run one of the tests simply type this into your command line if you have cargo installed:
+```
+$ cargo run exec examples/fib
+```
 
 ## License
 This project is licensed under the MIT License.
