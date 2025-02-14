@@ -33,10 +33,10 @@ impl InstructionChunk {
         loop {
             let instruction = decode::decode(&memory::read(*ip..*ip + 16)?)?;
 
-            info!("instruction: {:?}", instruction);
+            info!("instruction: {:?}, ip: {:#x?}", instruction, *ip);
 
             match instruction.code {
-                Code::Syscall => {
+                Code::Syscall | Code::JneRel8 | Code::CmpRM64Imm8 => {
                     return Ok(InstructionChunk {
                         terminator: instruction,
                         chunk,

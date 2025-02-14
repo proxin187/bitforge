@@ -11,6 +11,7 @@ use translate::Translate;
 use jit::Jit;
 
 use object::{Object, File};
+use log::info;
 
 use std::fs;
 
@@ -62,7 +63,31 @@ impl Context {
 }
 
 #[derive(Debug)]
+pub struct Eflags {
+    CF: bool,
+    OF: bool,
+    SF: bool,
+    ZF: bool,
+    AF: bool,
+    PF: bool,
+}
+
+impl Eflags {
+    pub fn new() -> Eflags {
+        Eflags {
+            CF: false,
+            OF: false,
+            SF: false,
+            ZF: false,
+            AF: false,
+            PF: false,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Executor {
+    eflags: Eflags,
     jit: Jit,
     ip: usize,
     should_close: bool,
@@ -76,6 +101,7 @@ impl Executor {
         memory::load(&file)?;
 
         Ok(Executor {
+            eflags: Eflags::new(),
             jit: Jit::new(),
             ip: file.entry() as usize,
             should_close: false,
@@ -84,6 +110,19 @@ impl Executor {
 
     fn emulate(&mut self, instruction: Instruction) {
         match instruction.code {
+            Code::CmpRM64Imm8 => {
+                let register = instruction.ops[0].get_register().expect("invalid argument");
+                let imm8 = instruction.ops[1].get_imm8().expect("invalid argument");
+
+                info!("register: {:?}, imm8: {}", unsafe { CONTEXT.get_register(&register) }, imm8);
+
+                self.eflags.ZF = unsafe { CONTEXT.get_register(&register) } == imm8 as u64;
+            },
+            Code::JneRel8 => {
+                if !self.eflags.ZF {
+                    self.ip = (self.ip as isize + instruction.ops[0].get_imm8().expect("invalid arguments") as isize) as usize;
+                }
+            },
             Code::Syscall => {
                 if syscall::perform() {
                     self.should_close = true;
@@ -91,6 +130,8 @@ impl Executor {
             },
             _ => unreachable!(),
         }
+
+        self.ip += instruction.size;
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -102,7 +143,6 @@ impl Executor {
                 translate.process(&part);
             }
 
-            // TODO: find out why it segfaults
             if !translate.is_empty() {
                 self.jit.exec(translate);
             }

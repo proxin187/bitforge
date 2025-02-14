@@ -48,9 +48,8 @@ impl Instruction {
 
                 [vec![0x48, 0xbf], (register as u64).to_ne_bytes().to_vec()].concat()
             },
-            Code::AddRM64Imm8 => {
-                todo!("here we will have to make a mechanism where we can have an instruction to perform before the write")
-            },
+            Code::AddRM64Imm8 => unimplemented!(),
+            Code::CmpRM64Imm8 => unimplemented!(),
             _ => Vec::new(),
         }
     }
@@ -59,7 +58,11 @@ impl Instruction {
         match self.code {
             Code::MovRM64Imm32 => self.ops[0].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Write }),
             Code::MovR64RM64 => self.ops[1].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Read }),
+            Code::MovRM64R64 => self.ops[0].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Read }),
             Code::AddRM64Imm8 => self.ops[0].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Write }),
+            Code::AddRM64R64 => self.ops[0].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Write }),
+            Code::CmpRM64Imm8 => self.ops[0].get_memory().map(|memory| Access { addr: memory, kind: AccessKind::Write }),
+            Code::JneRel8 => None,
             Code::Syscall => None,
         }
     }
@@ -68,7 +71,7 @@ impl Instruction {
 #[derive(Debug)]
 pub enum Operand {
     Imm32(u32),
-    Imm8(u8),
+    Imm8(i8),
     Memory(MemoryAddr),
     Register(Register),
 }
@@ -84,6 +87,13 @@ impl Operand {
     pub fn get_imm32(&self) -> Option<u32> {
         match self {
             Operand::Imm32(imm32) => Some(*imm32),
+            _ => None,
+        }
+    }
+
+    pub fn get_imm8(&self) -> Option<i8> {
+        match self {
+            Operand::Imm8(imm8) => Some(*imm8),
             _ => None,
         }
     }
@@ -177,7 +187,11 @@ impl From<u8> for Register {
 pub enum Code {
     MovRM64Imm32,
     MovR64RM64,
+    MovRM64R64,
     AddRM64Imm8,
+    AddRM64R64,
+    CmpRM64Imm8,
+    JneRel8,
     Syscall,
 }
 

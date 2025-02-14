@@ -6,8 +6,8 @@ entry start
 
 start:
     mov qword [rsp], 34
-    add qword [rsp], 35
     mov rdi, [rsp]
+    add rdi, 35
 
     mov rax, 60
     syscall

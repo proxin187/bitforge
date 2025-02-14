@@ -1,8 +1,0 @@
-
-
-MOV		rm64,imm32			[mi:	hlexr o64 c7 /0 id,s]			X64
-MOV		reg8,reg8			[rm:	8a /r]					8086
-
-SYSCALL		void				[	0f 05]					P6,AMD
-
-

@@ -1,0 +1,23 @@
+format ELF64 executable 3
+segment readable executable
+
+
+entry start
+
+start:
+    mov rax, 0
+    mov rdi, 1
+    mov rsi, 0
+fib:
+    mov rdx, rdi
+    add rdi, rsi
+    mov rsi, rdx
+
+    add rax, 1
+    cmp rax, 5 ; edit this number to change which fibonacci number you want
+    jne fib
+exit:
+    mov rax, 60
+    syscall
+
+

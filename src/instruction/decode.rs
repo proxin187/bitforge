@@ -139,9 +139,29 @@ impl Decoder {
             Some(0x8b) => {
                 let (operand, register) = self.modrm()?;
 
-                Ok(Instruction  {
+                Ok(Instruction {
                     code: Code::MovR64RM64,
                     ops: vec![Operand::Register(register), operand],
+                    size: 16 - self.bytes.by_ref().count(),
+                    rex,
+                })
+            },
+            Some(0x89) => {
+                let (operand, register) = self.modrm()?;
+
+                Ok(Instruction {
+                    code: Code::MovRM64R64,
+                    ops: vec![operand, Operand::Register(register)],
+                    size: 16 - self.bytes.by_ref().count(),
+                    rex,
+                })
+            },
+            Some(0x01) => {
+                let (operand, register) = self.modrm()?;
+
+                Ok(Instruction {
+                    code: Code::AddRM64R64,
+                    ops: vec![operand, Operand::Register(register)],
                     size: 16 - self.bytes.by_ref().count(),
                     rex,
                 })
@@ -153,13 +173,29 @@ impl Decoder {
                     Register::Rax => {
                         Ok(Instruction {
                             code: Code::AddRM64Imm8,
-                            ops: vec![operand, Operand::Imm8(self.read8()?)],
+                            ops: vec![operand, Operand::Imm8(self.read8()? as i8)],
+                            size: 16 - self.bytes.by_ref().count(),
+                            rex,
+                        })
+                    },
+                    Register::Rdi => {
+                        Ok(Instruction {
+                            code: Code::CmpRM64Imm8,
+                            ops: vec![operand, Operand::Imm8(self.read8()? as i8)],
                             size: 16 - self.bytes.by_ref().count(),
                             rex,
                         })
                     },
                     _ => unimplemented!(),
                 }
+            },
+            Some(0x75) => {
+                Ok(Instruction {
+                    code: Code::JneRel8,
+                    ops: vec![Operand::Imm8(self.read8()? as i8)],
+                    size: 16 - self.bytes.by_ref().count(),
+                    rex,
+                })
             },
             Some(0x0f) => match self.bytes.next() {
                 Some(0x05) => {
